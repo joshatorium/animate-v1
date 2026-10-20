@@ -38,6 +38,7 @@ let frameFloat = 1;          // smooth playhead while playing
 let playing = false;
 let activeTool = 'move';     // select | move | rotate | scale
 let ghostOn = false;
+let autoKeyOn = false;
 let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs
 const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1 };
 
@@ -375,10 +376,12 @@ function updateGhosts() {
 }
 
 function updateSettings() {
-  const p = livePose;
-  $('setMove').textContent = `${fmt(p.moveX)} • ${fmt(p.moveY)} • ${fmt(p.moveZ)}`;
-  $('setRotate').textContent = `${fmt(p.rotateX)} • ${fmt(p.rotateY)} • ${fmt(p.rotateZ)}`;
-  $('setScale').textContent = `${fmt(p.scaleX)} • ${fmt(p.scaleY)} • ${fmt(p.scaleZ)}`;
+  // The settings boxes show the live values. A box the user is
+  // typing in is left alone until the typing is done.
+  for (const input of document.querySelectorAll('.chan-input')) {
+    if (document.activeElement === input) continue;
+    input.value = fmt(livePose[input.dataset.chan]);
+  }
   $('setFrame').textContent = String(currentFrame);
 }
 
@@ -412,6 +415,8 @@ tc.addEventListener('objectChange', () => {
     livePose.rotateZ = charGroup.rotation.z * 180 / Math.PI;
   }
   applyPose();
+  // Auto Key: any move with a tool writes keys at this frame.
+  if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
 });
 
 // ---------- Tools ----------
@@ -426,16 +431,46 @@ function setTool(tool) {
 document.querySelectorAll('.tool-btn[data-tool]').forEach((b) =>
   b.addEventListener('click', () => setTool(b.dataset.tool)));
 
-function setKey() {
+// Write keys for all transform channels at this frame, from the live pose.
+function writeKeys() {
   for (const name of TRANSFORM_CHANNELS) {
     const old = channels[name].find((k) => k.frame === currentFrame);
     addKey(name, currentFrame, Math.round(livePose[name] * 100) / 100, old ? old.tangent : 'auto');
   }
+}
+function setKey() {
+  writeKeys();
   say(`Key set at frame ${currentFrame}.`);
   drawRuler();
   if (graphOpen) drawGraph();
 }
 $('btnSetKey').addEventListener('click', setKey);
+// Right click on Set Key: turn Auto Key on or off.
+// With Auto Key on, any move sets a key at this frame.
+$('btnSetKey').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  autoKeyOn = !autoKeyOn;
+  $('btnSetKey').classList.toggle('autokey-on', autoKeyOn);
+  $('autoKeyTag').classList.toggle('hidden', !autoKeyOn);
+  say(autoKeyOn
+    ? 'Auto Key is ON. Any move sets a key at this frame. Right click Set Key to turn it off.'
+    : 'Auto Key is OFF.');
+});
+
+// Type a value in a Settings box: the pose takes the value at once.
+// With Auto Key on, the typed value also sets a key.
+document.querySelectorAll('.chan-input').forEach((input) => {
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+  input.addEventListener('change', () => {
+    const name = input.dataset.chan;
+    const v = parseFloat(input.value);
+    if (!isFinite(v)) { updateSettings(); return; }
+    livePose[name] = Math.round(v * 100) / 100;
+    applyPose();
+    if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
+    updateSettings();
+  });
+});
 
 function setGhost(on) {
   ghostOn = on;
@@ -715,12 +750,19 @@ function drawGraph() {
 }
 function geInfo() {
   const el = $('geInfo');
+  const fi = $('geFrameInput'), vi = $('geValueInput');
   document.querySelectorAll('.tan-btn').forEach((b) =>
     b.classList.toggle('active', !!geSelectedKey && geSelectedKey.tangent === b.dataset.tan));
   if (!geSelectedKey) {
+    fi.disabled = true; vi.disabled = true;
+    fi.value = ''; vi.value = '';
     el.textContent = 'Click a key dot to pick it. Drag a key dot to move it.';
     return;
   }
+  // Type-in boxes for the picked key. A box in use is left alone.
+  fi.disabled = false; vi.disabled = false;
+  if (document.activeElement !== fi) fi.value = geSelectedKey.frame;
+  if (document.activeElement !== vi) vi.value = fmt(geSelectedKey.value);
   el.textContent =
     `Picked key — Channel ${CHAN_LABEL[geChannel]} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
@@ -761,6 +803,32 @@ document.querySelectorAll('.tan-btn').forEach((b) =>
     livePose = evalAll(currentFrame);
     applyPose(); drawGraph(); geInfo(); drawRuler();
   }));
+
+// Type a new frame or value for the picked key in the Graph Editor.
+function geRefreshAfterEdit() {
+  sortKeys(geChannel);
+  livePose = evalAll(currentFrame);
+  applyPose(); drawGraph(); geInfo(); drawRuler();
+}
+$('geFrameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+$('geValueInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+$('geFrameInput').addEventListener('change', () => {
+  if (!geSelectedKey) return;
+  const f = clamp(Math.round(parseFloat($('geFrameInput').value)), FIRST_FRAME, LAST_FRAME);
+  if (!isFinite(f)) { geInfo(); return; }
+  // One key per frame in a channel: a key in the way is replaced.
+  const clash = channels[geChannel].find((k) => k !== geSelectedKey && k.frame === f);
+  if (clash) channels[geChannel].splice(channels[geChannel].indexOf(clash), 1);
+  geSelectedKey.frame = f;
+  geRefreshAfterEdit();
+});
+$('geValueInput').addEventListener('change', () => {
+  if (!geSelectedKey) return;
+  const v = parseFloat($('geValueInput').value);
+  if (!isFinite(v)) { geInfo(); return; }
+  geSelectedKey.value = Math.round(v * 100) / 100;
+  geRefreshAfterEdit();
+});
 
 geCanvas.addEventListener('pointerdown', (e) => {
   const g = geGeom();

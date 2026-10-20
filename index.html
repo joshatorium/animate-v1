@@ -45,7 +45,7 @@
       <button class="tool-btn active" data-tool="move" title="Move tool (W)"><span class="tool-icon">&#10038;</span>Move <b>W</b></button>
       <button class="tool-btn" data-tool="rotate" title="Rotate tool (E)"><span class="tool-icon">&#8635;</span>Rotate <b>E</b></button>
       <button class="tool-btn" data-tool="scale" title="Scale tool (R)"><span class="tool-icon">&#10530;</span>Scale <b>R</b></button>
-      <button class="tool-btn" id="btnSetKey" title="Set a key at this frame (S)"><span class="tool-icon">&#9670;</span>Set Key <b>S</b></button>
+      <button class="tool-btn" id="btnSetKey" title="Set a key at this frame (S). Right click: turn Auto Key on or off."><span class="tool-icon">&#9670;</span>Set Key <b>S</b><span id="autoKeyTag" class="autokey-tag hidden">AUTO KEY ON</span></button>
       <button class="tool-btn" id="btnGhost" title="Ghost: see the pose 6 frames before and after (G)"><span class="tool-icon">&#9684;</span>Ghost <b>G</b></button>
       <div class="rail-hint">Camera<br><b>Alt + drag</b><br>turn &bull; move &bull; zoom</div>
     </nav>
@@ -81,12 +81,24 @@
 
       <div class="panel" id="settingsPanel">
         <div class="panel-title">SETTINGS &mdash; Ball control</div>
-        <div class="set-label">Move&ensp;X / Y / Z</div>
-        <div class="set-value" id="setMove">0 &bull; 0 &bull; 0</div>
-        <div class="set-label">Rotate&ensp;X / Y / Z</div>
-        <div class="set-value" id="setRotate">0 &bull; 0 &bull; 0</div>
+        <div class="set-label">Move&ensp;X / Y / Z &mdash; click a box and type</div>
+        <div class="set-inputs">
+          <input type="number" step="0.1" class="chan-input" data-chan="moveX" title="Move X">
+          <input type="number" step="0.1" class="chan-input" data-chan="moveY" title="Move Y">
+          <input type="number" step="0.1" class="chan-input" data-chan="moveZ" title="Move Z">
+        </div>
+        <div class="set-label">Rotate&ensp;X / Y / Z &mdash; degrees</div>
+        <div class="set-inputs">
+          <input type="number" step="1" class="chan-input" data-chan="rotateX" title="Rotate X">
+          <input type="number" step="1" class="chan-input" data-chan="rotateY" title="Rotate Y">
+          <input type="number" step="1" class="chan-input" data-chan="rotateZ" title="Rotate Z">
+        </div>
         <div class="set-label">Scale&ensp;X / Y / Z</div>
-        <div class="set-value" id="setScale">1 &bull; 1 &bull; 1</div>
+        <div class="set-inputs">
+          <input type="number" step="0.05" class="chan-input" data-chan="scaleX" title="Scale X">
+          <input type="number" step="0.05" class="chan-input" data-chan="scaleY" title="Scale Y">
+          <input type="number" step="0.05" class="chan-input" data-chan="scaleZ" title="Scale Z">
+        </div>
         <div class="set-label">Frame</div>
         <div class="set-value" id="setFrame">1</div>
       </div>
@@ -130,7 +142,13 @@
       <div id="geChannels"></div>
       <canvas id="geCanvas"></canvas>
     </div>
-    <div class="ge-foot" id="geInfo">Click a key dot to pick it. Drag a key dot to move it.</div>
+    <div class="ge-foot">
+      <span id="geInfo">Click a key dot to pick it. Drag a key dot to move it.</span>
+      <span class="ge-edit">
+        <label>Frame <input type="number" id="geFrameInput" min="1" max="48" step="1" disabled></label>
+        <label>Value <input type="number" id="geValueInput" step="0.1" disabled></label>
+      </span>
+    </div>
   </div>
 </div>
 

@@ -105,6 +105,18 @@ a.btn { text-decoration: none; display: inline-block; }
 #btnBuildRig { margin-top: 10px; }
 .set-label { color: #aab2be; font-size: 13.5px; margin-top: 9px; }
 .set-value { font-size: 17px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.set-inputs { display: flex; gap: 6px; margin-top: 3px; }
+.chan-input {
+  flex: 1; min-width: 0; background: #22262e; color: #ebedf2;
+  border: 1px solid #4a5160; border-radius: 7px; padding: 6px 7px;
+  font-size: 15.5px; font-variant-numeric: tabular-nums;
+}
+.chan-input:focus { outline: 2px solid #ffb042; border-color: #ffb042; }
+.autokey-tag {
+  display: block; margin-top: 3px; font-size: 11px; font-weight: 800;
+  color: #ff8080; letter-spacing: .4px;
+}
+#btnSetKey.autokey-on { background: #5e2323; border-color: #ff6b6b; }
 
 /* ===== Timeline (bottom) ===== */
 #timelineBar { background: #1e2026; border-top: 1px solid #6e7682; padding: 8px 14px 6px; }
@@ -148,7 +160,18 @@ a.btn { text-decoration: none; display: inline-block; }
 .ge-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .ge-group-name { color: #ffb042; font-weight: 800; font-size: 13px; padding: 8px 8px 2px; }
 #geCanvas { flex: 1; min-width: 0; background: #101114; border: 1px solid #6e7682; border-radius: 10px; cursor: crosshair; }
-.ge-foot { padding-top: 9px; font-size: 14.5px; color: #cfd5de; font-variant-numeric: tabular-nums; }
+.ge-foot {
+  padding-top: 9px; font-size: 14.5px; color: #cfd5de; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.ge-edit { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+.ge-edit label { color: #aab2be; font-weight: 700; font-size: 13.5px; }
+.ge-edit input {
+  width: 84px; margin-left: 6px; background: #22262e; color: #ebedf2;
+  border: 1px solid #4a5160; border-radius: 7px; padding: 6px 7px; font-size: 15px;
+}
+.ge-edit input:focus { outline: 2px solid #ffb042; border-color: #ffb042; }
+.ge-edit input:disabled { opacity: .38; }
 
 /* ===== Modals (playblast) ===== */
 .modal {
