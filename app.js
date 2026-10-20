@@ -85,7 +85,12 @@ function sortKeys(name) {
 function addKey(name, frame, value, tangent = 'auto') {
   const keys = channels[name];
   const old = keys.find((k) => k.frame === frame);
-  if (old) { old.value = value; old.tangent = tangent; return old; }
+  if (old) {
+    // A new tangent type clears any bezier slopes on the key.
+    if (old.tangent !== tangent) { delete old.slopeIn; delete old.slopeOut; }
+    old.value = value; old.tangent = tangent;
+    return old;
+  }
   const key = { frame, value, tangent };
   keys.push(key); sortKeys(name);
   return key;
@@ -108,8 +113,9 @@ function evalChannel(name, frame) {
 
   // Step: hold the first value until the next key.
   if (k0.tangent === 'step') return k0.value;
-  // Linear on both ends: a straight line.
-  if (k0.tangent === 'linear' && k1.tangent === 'linear') {
+  // Linear on both ends: a straight line. Bezier slopes win over linear.
+  if (k0.tangent === 'linear' && k1.tangent === 'linear' &&
+      typeof k0.slopeOut !== 'number' && typeof k1.slopeIn !== 'number') {
     return lerp(k0.value, k1.value, t);
   }
   // Smooth: Hermite curve (Catmull-Rom style slopes through the keys).
@@ -123,6 +129,9 @@ function evalChannel(name, frame) {
   if (k1.tangent === 'flat') m1 = 0;
   if (k0.tangent === 'linear') m0 = (k1.value - k0.value) / h;
   if (k1.tangent === 'linear') m1 = (k1.value - k0.value) / h;
+  // Bezier handles: a slope set by a handle drag wins over the type.
+  if (typeof k0.slopeOut === 'number') m0 = k0.slopeOut;
+  if (typeof k1.slopeIn === 'number') m1 = k1.slopeIn;
   const t2 = t * t, t3 = t2 * t;
   const h00 = 2 * t3 - 3 * t2 + 1;
   const h10 = t3 - 2 * t2 + t;
@@ -157,6 +166,7 @@ function undo() {
   Object.assign(sliders, item.state.sliders);
   livePose = item.state.livePose;
   geSelectedKey = null;
+  geSelKeys = [];
   $('sldSize').value = sliders.ballSize;
   $('sldTailLen').value = sliders.tailLength;
   $('sldTailBend').value = sliders.tailBend;
@@ -234,10 +244,42 @@ scene.add(ground);
 // While Alt is held we turn TransformControls off and orbit by hand.
 const orbitTarget = new THREE.Vector3(0, 1.2, 0);
 let sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbitTarget));
+// Views: Perspective (orbit), plus flat Front, Side, and Top views.
+// Flat views use a long, narrow lens so lines stay near parallel.
+let viewMode = 'persp';
+let flatDist = 12;
+const VIEW_NAMES = { persp: 'Camera 1', front: 'Front', side: 'Side', top: 'Top' };
 function applyCamera() {
-  camera.position.copy(orbitTarget).add(new THREE.Vector3().setFromSpherical(sph));
+  if (viewMode === 'persp') {
+    camera.up.set(0, 1, 0);
+    camera.fov = 45;
+    camera.position.copy(orbitTarget).add(new THREE.Vector3().setFromSpherical(sph));
+  } else {
+    camera.fov = 15;
+    const t = orbitTarget;
+    if (viewMode === 'front') {
+      camera.up.set(0, 1, 0);
+      camera.position.set(t.x, t.y, t.z + flatDist);
+    } else if (viewMode === 'side') {
+      camera.up.set(0, 1, 0);
+      camera.position.set(t.x + flatDist, t.y, t.z);
+    } else {   // top: look straight down, scene front points up-screen
+      camera.up.set(0, 0, -1);
+      camera.position.set(t.x, t.y + flatDist, t.z + 0.001);
+    }
+  }
+  camera.updateProjectionMatrix();
   camera.lookAt(orbitTarget);
+  $('viewLabel').textContent = '3D VIEW — ' + VIEW_NAMES[viewMode];
 }
+function setView(mode) {
+  viewMode = mode;
+  document.querySelectorAll('.view-btn').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === mode));
+  applyCamera();
+}
+document.querySelectorAll('.view-btn').forEach((b) =>
+  b.addEventListener('click', () => setView(b.dataset.view)));
 applyCamera();
 let altDrag = null;
 window.addEventListener('pointerdown', (e) => {
@@ -252,13 +294,15 @@ window.addEventListener('pointermove', (e) => {
   if (!altDrag) return;
   const dx = e.clientX - altDrag.x, dy = e.clientY - altDrag.y;
   altDrag.x = e.clientX; altDrag.y = e.clientY;
-  if (altDrag.button === 2 || e.shiftKey) {
+  if (altDrag.button === 2 || e.shiftKey || viewMode !== 'persp') {
     // Pan: move the target in the camera plane.
+    // Flat views always pan: a flat view does not turn.
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
     orbitTarget.addScaledVector(right, -dx * 0.01).addScaledVector(up, dy * 0.01);
   } else if (e.ctrlKey || e.metaKey) {
-    sph.radius = clamp(sph.radius - dy * 0.05, 3, 40);   // zoom
+    if (viewMode === 'persp') sph.radius = clamp(sph.radius - dy * 0.05, 3, 40);   // zoom
+    else flatDist = clamp(flatDist - dy * 0.05, 4, 40);
   } else {
     sph.theta -= dx * 0.008;                               // turn
     sph.phi = clamp(sph.phi - dy * 0.008, 0.15, 1.5);
@@ -270,7 +314,9 @@ window.addEventListener('pointerup', () => {
 }, true);
 renderer.domElement.addEventListener('wheel', (e) => {
   e.preventDefault();
-  sph.radius = clamp(sph.radius + Math.sign(e.deltaY) * 0.7, 3, 40);
+  const d = Math.sign(e.deltaY) * 0.7;
+  if (viewMode === 'persp') sph.radius = clamp(sph.radius + d, 3, 40);
+  else flatDist = clamp(flatDist + d, 4, 40);
   applyCamera();
 }, { passive: false });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -665,7 +711,11 @@ $('openFile').addEventListener('change', async (e) => {
       if (Array.isArray(data.channels[name])) {
         channels[name] = data.channels[name]
           .filter((k) => typeof k.frame === 'number' && typeof k.value === 'number')
-          .map((k) => ({ frame: k.frame, value: k.value, tangent: k.tangent || 'auto' }));
+          .map((k) => ({
+            frame: k.frame, value: k.value, tangent: k.tangent || 'auto',
+            ...(typeof k.slopeIn === 'number' ? { slopeIn: k.slopeIn } : {}),
+            ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {})
+          }));
         sortKeys(name);
       }
     }
@@ -690,7 +740,29 @@ let geSelected = new Set(['moveY']);     // all picked channels (Shift+click add
 let geKeyChannel = 'moveY';              // the channel of the picked key
 let geShowAll = false;
 let geSelectedKey = null;   // a key object inside channels[geKeyChannel]
+let geSelKeys = [];         // [{chan, key}] all picked keys (click or drag box)
+let geMarquee = null;       // the live drag box {x0, y0, x1, y1, add}
+let geHandles = null;       // screen points of the active key's bezier handles
 let geDrag = null;
+function keyIsPicked(key) { return geSelKeys.some((s) => s.key === key); }
+
+// The slope of a key on one side, as the curve math sees it:
+// a bezier slope set by hand wins, then the tangent type rules.
+function keySlope(name, key, side) {
+  const custom = side === 'out' ? key.slopeOut : key.slopeIn;
+  if (typeof custom === 'number') return custom;
+  if (key.tangent === 'flat' || key.tangent === 'step') return 0;
+  const keys = channels[name];
+  const i = keys.indexOf(key);
+  const prev = keys[i - 1], next = keys[i + 1];
+  if (key.tangent === 'linear') {
+    if (side === 'out') return next ? (next.value - key.value) / Math.max(1, next.frame - key.frame) : 0;
+    return prev ? (key.value - prev.value) / Math.max(1, key.frame - prev.frame) : 0;
+  }
+  const a = prev || key, b = next || key;
+  if (a === b) return 0;
+  return (b.value - a.value) / Math.max(1, b.frame - a.frame);
+}
 const geCanvas = $('geCanvas');
 const gctx = geCanvas.getContext('2d');
 
@@ -728,6 +800,7 @@ function buildGeChannelList() {
         }
         geKeyChannel = geChannel;
         geSelectedKey = null;
+        geSelKeys = [];
         buildGeChannelList(); drawGraph(); geInfo();
       });
       box.appendChild(b);
@@ -810,16 +883,48 @@ function drawGraph() {
   if (geShowAll) for (const n of CHANNEL_NAMES) if (!geSelected.has(n)) drawCurve(n, false, 1.5);
   for (const n of geSelected) if (n !== geChannel) drawCurve(n, true, 2.25);
   drawCurve(geChannel, true, 3);
-  // Key dots on all picked channels.
+  // Key dots on all picked channels. Picked keys are orange.
   for (const n of geSelected) {
     for (const k of channels[n]) {
       const x = g.x(k.frame), y = g.y(k.value);
+      const picked = keyIsPicked(k);
       gctx.beginPath(); gctx.arc(x, y, k === geSelectedKey ? 8 : 5.5, 0, Math.PI * 2);
-      gctx.fillStyle = k === geSelectedKey ? '#ffb042' : '#ffffff';
+      gctx.fillStyle = picked ? '#ffb042' : '#ffffff';
       gctx.fill();
       gctx.strokeStyle = CHAN_COLOR[n]; gctx.lineWidth = 2; gctx.stroke();
       gctx.lineWidth = 1;
     }
+  }
+  // Bezier handles on the active key: two lines with square ends.
+  // Drag an end to change the slope on that side of the key.
+  geHandles = null;
+  if (geSelectedKey && channels[geKeyChannel].includes(geSelectedKey)) {
+    const k = geSelectedKey;
+    const H = 4;   // a handle sits 4 frames from its key
+    const kx = g.x(k.frame), ky = g.y(k.value);
+    const inPt = { x: g.x(k.frame - H), y: g.y(k.value - keySlope(geKeyChannel, k, 'in') * H) };
+    const outPt = { x: g.x(k.frame + H), y: g.y(k.value + keySlope(geKeyChannel, k, 'out') * H) };
+    geHandles = { in: inPt, out: outPt };
+    gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 1.5;
+    gctx.beginPath(); gctx.moveTo(inPt.x, inPt.y); gctx.lineTo(kx, ky); gctx.lineTo(outPt.x, outPt.y); gctx.stroke();
+    gctx.lineWidth = 1;
+    for (const p of [inPt, outPt]) {
+      gctx.fillStyle = '#101114';
+      gctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+      gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 2;
+      gctx.strokeRect(p.x - 5, p.y - 5, 10, 10);
+      gctx.lineWidth = 1;
+    }
+  }
+  // The live drag box.
+  if (geMarquee) {
+    const xa = Math.min(geMarquee.x0, geMarquee.x1), xb = Math.max(geMarquee.x0, geMarquee.x1);
+    const ya = Math.min(geMarquee.y0, geMarquee.y1), yb = Math.max(geMarquee.y0, geMarquee.y1);
+    gctx.fillStyle = 'rgba(255, 176, 66, 0.12)';
+    gctx.fillRect(xa, ya, xb - xa, yb - ya);
+    gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 1.5;
+    gctx.strokeRect(xa, ya, xb - xa, yb - ya);
+    gctx.lineWidth = 1;
   }
   $('geChanName').textContent = geSelected.size === 1
     ? CHAN_LABEL[geChannel]
@@ -833,7 +938,9 @@ function geInfo() {
   if (!geSelectedKey) {
     fi.disabled = true; vi.disabled = true;
     fi.value = ''; vi.value = '';
-    el.textContent = 'Click a key dot to pick it. Drag a key dot to move it.';
+    el.textContent = geSelKeys.length > 1
+      ? `${geSelKeys.length} keys picked. Tangent buttons and Delete work on all picked keys.`
+      : 'Click a key dot to pick it. Drag on empty space to pick many keys in a box.';
     return;
   }
   // Type-in boxes for the picked key. A box in use is left alone.
@@ -841,20 +948,27 @@ function geInfo() {
   if (document.activeElement !== fi) fi.value = geSelectedKey.frame;
   if (document.activeElement !== vi) vi.value = fmt(geSelectedKey.value);
   el.textContent =
+    (geSelKeys.length > 1 ? `${geSelKeys.length} keys picked. ` : '') +
     `Picked key — Channel ${CHAN_LABEL[geKeyChannel]} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
-    'Use the tangent buttons to change how the curve moves through this key. ' +
-    'Press Delete to remove this key.';
+    'Drag the square handles to set bezier slopes. ' +
+    'Press Delete to remove the picked keys.';
 }
 // Remove the picked key from the picked channel.
 function deletePickedKey() {
-  if (!geSelectedKey) { say('Pick a key in the Graph Editor first.'); return; }
-  const keys = channels[geKeyChannel];
-  const i = keys.indexOf(geSelectedKey);
-  if (i < 0) { geSelectedKey = null; return; }
-  pushHistory('Delete key');
-  keys.splice(i, 1);
-  say(`Key removed — ${CHAN_LABEL[geKeyChannel]} frame ${geSelectedKey.frame}.`);
+  // Delete works on all picked keys at once (one undo step).
+  if (!geSelKeys.length && geSelectedKey) geSelKeys = [{ chan: geKeyChannel, key: geSelectedKey }];
+  if (!geSelKeys.length) { say('Pick a key in the Graph Editor first.'); return; }
+  pushHistory(geSelKeys.length > 1 ? 'Delete keys' : 'Delete key');
+  const n = geSelKeys.length;
+  const first = geSelKeys[0];
+  for (const { chan, key } of geSelKeys) {
+    const arr = channels[chan];
+    const i = arr.indexOf(key);
+    if (i >= 0) arr.splice(i, 1);
+  }
+  say(n > 1 ? `${n} keys removed.` : `Key removed — ${CHAN_LABEL[first.chan]} frame ${first.key.frame}.`);
+  geSelKeys = [];
   geSelectedKey = null;
   geDrag = null;
   livePose = evalAll(currentFrame);
@@ -876,9 +990,18 @@ $('btnGraphClose').addEventListener('click', closeGraph);
 $('geShowAll').addEventListener('change', (e) => { geShowAll = e.target.checked; drawGraph(); });
 document.querySelectorAll('.tan-btn').forEach((b) =>
   b.addEventListener('click', () => {
-    if (!geSelectedKey) { say('Pick a key in the Graph Editor first.'); return; }
-    if (geSelectedKey.tangent !== b.dataset.tan) pushHistory('Change tangent');
-    geSelectedKey.tangent = b.dataset.tan;
+    // Tangent buttons work on all picked keys at once.
+    // A type pick also clears bezier slopes on those keys.
+    const targets = geSelKeys.length ? geSelKeys.map((s) => s.key)
+      : (geSelectedKey ? [geSelectedKey] : []);
+    if (!targets.length) { say('Pick a key in the Graph Editor first.'); return; }
+    if (targets.some((k) => k.tangent !== b.dataset.tan || typeof k.slopeIn === 'number' || typeof k.slopeOut === 'number')) {
+      pushHistory('Change tangent');
+    }
+    for (const k of targets) {
+      k.tangent = b.dataset.tan;
+      delete k.slopeIn; delete k.slopeOut;
+    }
     livePose = evalAll(currentFrame);
     applyPose(); drawGraph(); geInfo(); drawRuler();
   }));
@@ -914,33 +1037,129 @@ $('geValueInput').addEventListener('change', () => {
 geCanvas.addEventListener('pointerdown', (e) => {
   const g = geGeom();
   const mx = e.offsetX, my = e.offsetY;
-  // Keys can be picked on any picked curve, not just the main one.
-  let hit = null;
+  // 1) A bezier handle of the active key.
+  if (geSelectedKey && geHandles) {
+    for (const side of ['in', 'out']) {
+      const hp = geHandles[side];
+      if (hp && Math.hypot(hp.x - mx, hp.y - my) <= 11) {
+        geDrag = { kind: 'handle', side, pushed: false };
+        geCanvas.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
+  }
+  // 2) A key on any picked curve.
+  let hit = null, hitChan = null;
   for (const n of geSelected) {
     for (const k of channels[n]) {
       if (Math.hypot(g.x(k.frame) - mx, g.y(k.value) - my) <= 10) {
-        hit = k; geKeyChannel = n; break;
+        hit = k; hitChan = n; break;
       }
     }
     if (hit) break;
   }
-  geSelectedKey = hit;
-  geDrag = hit ? { moved: false } : null;
-  if (hit) geCanvas.setPointerCapture(e.pointerId);
-  drawGraph(); geInfo();
+  if (hit) {
+    if (!keyIsPicked(hit)) geSelKeys = [{ chan: hitChan, key: hit }];
+    geSelectedKey = hit;
+    geKeyChannel = hitChan;
+    geDrag = {
+      kind: 'key', pushed: false,
+      startFrame: hit.frame, startValue: hit.value, lastDF: 0, lastDV: 0
+    };
+    geCanvas.setPointerCapture(e.pointerId);
+    drawGraph(); geInfo();
+    return;
+  }
+  // 3) Empty space: start a drag box. Shift adds to the pick.
+  geMarquee = { x0: mx, y0: my, x1: mx, y1: my, add: e.shiftKey };
+  geDrag = { kind: 'marquee' };
+  geCanvas.setPointerCapture(e.pointerId);
 });
 geCanvas.addEventListener('pointermove', (e) => {
-  if (!geDrag || !geSelectedKey) return;
-  if (!geDrag.pushed) { pushHistory('Move key'); geDrag.pushed = true; }
+  if (!geDrag) return;
   const g = geGeom();
-  geDrag.moved = true;
-  geSelectedKey.frame = clamp(Math.round(g.frame(e.offsetX)), FIRST_FRAME, LAST_FRAME);
-  geSelectedKey.value = Math.round(g.value(e.offsetY) * 100) / 100;
-  sortKeys(geKeyChannel);
+  if (geDrag.kind === 'marquee') {
+    geMarquee.x1 = e.offsetX; geMarquee.y1 = e.offsetY;
+    drawGraph();
+    return;
+  }
+  if (geDrag.kind === 'handle') {
+    if (!geDrag.pushed) { pushHistory('Move tangent handle'); geDrag.pushed = true; }
+    const k = geSelectedKey;
+    const H = 4;
+    const hv = g.value(e.offsetY);
+    // The handle stays 4 frames out. Its height sets the slope.
+    if (geDrag.side === 'out') k.slopeOut = Math.round(((hv - k.value) / H) * 100) / 100;
+    else k.slopeIn = Math.round(((k.value - hv) / H) * 100) / 100;
+    livePose = evalAll(currentFrame);
+    applyPose(); drawGraph(); geInfo();
+    return;
+  }
+  // Move all picked keys by the same step as the dragged key.
+  if (!geDrag.pushed) {
+    pushHistory(geSelKeys.length > 1 ? 'Move keys' : 'Move key');
+    geDrag.pushed = true;
+  }
+  const df = Math.round(g.frame(e.offsetX)) - geDrag.startFrame;
+  const dv = Math.round((g.value(e.offsetY) - geDrag.startValue) * 100) / 100;
+  const ddf = df - geDrag.lastDF;
+  const ddv = Math.round((dv - geDrag.lastDV) * 100) / 100;
+  if (!ddf && !ddv) return;
+  geDrag.lastDF = df; geDrag.lastDV = dv;
+  for (const { key } of geSelKeys) {
+    key.frame = clamp(key.frame + ddf, FIRST_FRAME, LAST_FRAME);
+    key.value = Math.round((key.value + ddv) * 100) / 100;
+  }
+  for (const n of new Set(geSelKeys.map((s) => s.chan))) sortKeys(n);
   livePose = evalAll(currentFrame);
   applyPose(); drawGraph(); geInfo(); drawRuler();
 });
-geCanvas.addEventListener('pointerup', () => { geDrag = null; });
+geCanvas.addEventListener('pointerup', () => {
+  if (!geDrag) return;
+  if (geDrag.kind === 'marquee' && geMarquee) {
+    const g = geGeom();
+    const xa = Math.min(geMarquee.x0, geMarquee.x1), xb = Math.max(geMarquee.x0, geMarquee.x1);
+    const ya = Math.min(geMarquee.y0, geMarquee.y1), yb = Math.max(geMarquee.y0, geMarquee.y1);
+    const tiny = xb - xa < 4 && yb - ya < 4;
+    if (tiny) {
+      // A plain click on empty space clears the pick.
+      if (!geMarquee.add) { geSelKeys = []; geSelectedKey = null; }
+    } else {
+      const found = [];
+      for (const n of geSelected) {
+        for (const k of channels[n]) {
+          const x = g.x(k.frame), y = g.y(k.value);
+          if (x >= xa && x <= xb && y >= ya && y <= yb) found.push({ chan: n, key: k });
+        }
+      }
+      if (geMarquee.add) {
+        for (const f of found) if (!keyIsPicked(f.key)) geSelKeys.push(f);
+      } else {
+        geSelKeys = found;
+      }
+      if (found.length) {
+        geSelectedKey = found[found.length - 1].key;
+        geKeyChannel = found[found.length - 1].chan;
+      } else if (!geMarquee.add) {
+        geSelectedKey = null;
+      }
+    }
+    geMarquee = null;
+  }
+  if (geDrag.kind === 'key') {
+    // After a group move: one key per frame in a channel.
+    // A key that was not moved and sits in the way is removed.
+    for (const n of new Set(geSelKeys.map((s) => s.chan))) {
+      const pickedFrames = new Set(
+        geSelKeys.filter((s) => s.chan === n).map((s) => s.key.frame));
+      channels[n] = channels[n].filter(
+        (k) => keyIsPicked(k) || !pickedFrames.has(k.frame));
+      sortKeys(n);
+    }
+  }
+  geDrag = null;
+  drawGraph(); geInfo(); drawRuler();
+});
 
 // ---------- Playblast (see docs/playblast-plan.md) ----------
 // Real-time pacing: step one frame, hold 1/24 s, requestFrame().

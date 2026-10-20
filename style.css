@@ -76,6 +76,13 @@ a.btn { text-decoration: none; display: inline-block; }
   position: absolute; left: 14px; bottom: 10px; z-index: 3;
   color: #8b93a0; font-size: 13.5px; pointer-events: none;
 }
+#viewBtns { position: absolute; top: 8px; right: 12px; z-index: 3; display: flex; gap: 6px; }
+.view-btn {
+  background: #2e323a; color: #cfd5de; border: 1px solid #4a5160; border-radius: 8px;
+  padding: 5px 11px; font-size: 13.5px; cursor: pointer;
+}
+.view-btn:hover { background: #3a3f49; }
+.view-btn.active { background: #2b4a6e; border-color: #54aaff; color: #ffffff; }
 .note {
   position: absolute; left: 14px; bottom: 38px; z-index: 4; max-width: 520px;
   background: #2b4a6e; border: 1px solid #54aaff; border-radius: 10px;
