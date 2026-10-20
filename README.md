@@ -2,6 +2,8 @@
 
 A web app to teach kids 3D animation.
 
+**Live app:** https://joshatorium.github.io/animate-v1/
+
 The app works like Maya in a simple way.
 The app has animation tools only.
 The app has simple rig tools only.
