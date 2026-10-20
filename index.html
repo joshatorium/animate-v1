@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANIMATE — Version 1</title>
+<link rel="stylesheet" href="style.css">
+<!-- Three.js r160 from CDN. No build step, no npm. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== Top bar ===== -->
+  <header id="topbar">
+    <div class="title">ANIMATE <span class="title-sub">— Version 1</span></div>
+    <div class="top-group">
+      <button id="btnOpen" class="btn">Open</button>
+      <button id="btnSave" class="btn">Save</button>
+    </div>
+    <div class="top-group top-right">
+      <button id="btnGetMaya" class="btn blue">Get from Maya</button>
+      <button id="btnSendMaya" class="btn blue">Send to Maya</button>
+      <select id="lessonSelect" class="lesson-pick" title="Pick a lesson">
+        <option value="1">Lesson 1</option>
+        <option value="2" selected>Lesson 2</option>
+        <option value="3">Lesson 3</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- ===== Middle row: tools | 3D view | right panels ===== -->
+  <main id="middle">
+
+    <nav id="toolrail">
+      <div class="rail-title">TOOLS</div>
+      <button class="tool-btn" data-tool="select" title="Select tool (Q)"><span class="tool-icon">&#8598;</span>Select <b>Q</b></button>
+      <button class="tool-btn active" data-tool="move" title="Move tool (W)"><span class="tool-icon">&#10038;</span>Move <b>W</b></button>
+      <button class="tool-btn" data-tool="rotate" title="Rotate tool (E)"><span class="tool-icon">&#8635;</span>Rotate <b>E</b></button>
+      <button class="tool-btn" data-tool="scale" title="Scale tool (R)"><span class="tool-icon">&#10530;</span>Scale <b>R</b></button>
+      <button class="tool-btn" id="btnSetKey" title="Set a key at this frame (S)"><span class="tool-icon">&#9670;</span>Set Key <b>S</b></button>
+      <button class="tool-btn" id="btnGhost" title="Ghost: see the pose 6 frames before and after (G)"><span class="tool-icon">&#9684;</span>Ghost <b>G</b></button>
+      <div class="rail-hint">Camera<br><b>Alt + drag</b><br>turn &bull; move &bull; zoom</div>
+    </nav>
+
+    <section id="viewWrap">
+      <div id="viewLabel">3D VIEW &mdash; Camera 1</div>
+      <div id="canvasHost"></div>
+      <div id="viewHint">Hold Alt + drag: turn &bull; move &bull; zoom</div>
+      <div id="mayaNote" class="note hidden"></div>
+    </section>
+
+    <aside id="rightPanel">
+      <div class="panel" id="rigPanel">
+        <div class="panel-title">RIG &mdash; Pick one</div>
+        <button class="tpl-btn" data-tpl="1">1&ensp;Ball</button>
+        <button class="tpl-btn active" data-tpl="2">2&ensp;Ball + Tail</button>
+        <button class="tpl-btn" data-tpl="3">3&ensp;Ball + Legs</button>
+        <div class="panel-subtitle">Sliders</div>
+        <label class="slider-row">Ball size
+          <input type="range" id="sldSize" min="0.5" max="2" step="0.05" value="1">
+        </label>
+        <label class="slider-row">Tail length
+          <input type="range" id="sldTailLen" min="1" max="6" step="1" value="4">
+        </label>
+        <label class="slider-row">Tail bend
+          <input type="range" id="sldTailBend" min="-1.5" max="1.5" step="0.05" value="0.35">
+        </label>
+        <label class="slider-row">Leg length
+          <input type="range" id="sldLegLen" min="0.4" max="2" step="0.05" value="1">
+        </label>
+        <button id="btnBuildRig" class="btn green big">BUILD RIG</button>
+      </div>
+
+      <div class="panel" id="settingsPanel">
+        <div class="panel-title">SETTINGS &mdash; Ball control</div>
+        <div class="set-label">Move&ensp;X / Y / Z</div>
+        <div class="set-value" id="setMove">0 &bull; 0 &bull; 0</div>
+        <div class="set-label">Rotate&ensp;X / Y / Z</div>
+        <div class="set-value" id="setRotate">0 &bull; 0 &bull; 0</div>
+        <div class="set-label">Scale&ensp;X / Y / Z</div>
+        <div class="set-value" id="setScale">1 &bull; 1 &bull; 1</div>
+        <div class="set-label">Frame</div>
+        <div class="set-value" id="setFrame">1</div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ===== Bottom: timeline ===== -->
+  <footer id="timelineBar">
+    <div class="tl-row">
+      <span class="tl-title">TIMELINE</span>
+      <button id="btnToStart" class="btn small" title="Go to frame 1">|&lt;&lt;</button>
+      <button id="btnPlay" class="btn small green">&#9654; Play</button>
+      <button id="btnStop" class="btn small">&#9632; Stop</button>
+      <span id="frameReadout" class="frame-readout">Frame 1 / 48</span>
+      <span id="statusMsg" class="status-msg"></span>
+      <span class="tl-spacer"></span>
+      <span class="speed-label">Speed 24 fps</span>
+      <button id="btnGraph" class="btn blue">OPEN GRAPH EDITOR</button>
+      <button id="btnPlayblast" class="btn green">&#9679; PLAYBLAST &mdash; Make Movie</button>
+    </div>
+    <canvas id="ruler"></canvas>
+    <div class="tl-row tl-small"><span>Click the ruler to move the playhead. Orange diamonds are keys.</span></div>
+  </footer>
+</div>
+
+<!-- ===== Graph Editor window (separate panel) ===== -->
+<div id="graphOverlay" class="hidden">
+  <div id="graphWindow">
+    <div class="ge-head">
+      <span class="ge-title">GRAPH EDITOR &mdash; <span id="geChanName">Move Y</span></span>
+      <span class="ge-group"><span class="ge-label">TANGENT:</span>
+        <button class="btn small tan-btn" data-tan="auto">Auto</button>
+        <button class="btn small tan-btn" data-tan="flat">Flat</button>
+        <button class="btn small tan-btn" data-tan="linear">Linear</button>
+        <button class="btn small tan-btn" data-tan="step">Step</button>
+      </span>
+      <label class="ge-showall"><input type="checkbox" id="geShowAll"> Show All</label>
+      <button id="btnGraphClose" class="btn small red">Close &#10005;</button>
+    </div>
+    <div class="ge-body">
+      <div id="geChannels"></div>
+      <canvas id="geCanvas"></canvas>
+    </div>
+    <div class="ge-foot" id="geInfo">Click a key dot to pick it. Drag a key dot to move it.</div>
+  </div>
+</div>
+
+<!-- ===== Playblast progress box ===== -->
+<div id="pbBox" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-title">Making your movie&hellip;</div>
+    <div id="pbText">Frame 0 of 48</div>
+    <div class="pb-track"><div id="pbFill"></div></div>
+    <button id="btnPbCancel" class="btn red">Cancel</button>
+  </div>
+</div>
+
+<!-- ===== Playblast done box ===== -->
+<div id="doneBox" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-title">Your movie is done.</div>
+    <div id="doneText">Your movie is an MP4 file.</div>
+    <div class="done-actions">
+      <a id="doneOpen" class="btn green" href="#" target="_blank" rel="noopener">Open / play the movie</a>
+      <button id="btnDoneClose" class="btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="openFile" accept=".json,application/json" class="hidden">
+<input type="file" id="fbxFile" accept=".fbx" class="hidden">
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

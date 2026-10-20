@@ -24,10 +24,22 @@ The app has no model tools.
 
 ## Status
 
-Design stage. Screen drawings are in `docs/design/`.
-No working code yet. The first test app is next.
+Test app v0.1 is built (2026-10-20). Screen drawings are in `docs/design/`.
 
-## Run plan
+Works: the full layout, the ball rig templates, keys and the timeline,
+the Graph Editor window, Save/Open as JSON, playblast to a movie file,
+FBX load for playback, and GLB + JSON send (the fallback Maya route).
 
-The app is a static web app. No build step for Version 1.
-Open the app with a local web server when code lands.
+Not yet done: a click test in a real browser, the Chromebook playblast
+time test, tangent handle drag in the Graph Editor, and the server
+Blender step that makes a true FBX for Maya.
+
+## Run
+
+The app is a static web app. No build step.
+
+```
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000` in Chrome.
