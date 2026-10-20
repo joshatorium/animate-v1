@@ -122,6 +122,7 @@
       <span id="statusMsg" class="status-msg"></span>
       <span class="tl-spacer"></span>
       <span class="speed-label">Speed 24 fps</span>
+      <label class="frames-box">Frames <input type="number" id="sceneLen" value="48" min="12" max="480" step="1"></label>
       <button id="btnGraph" class="btn blue">OPEN GRAPH EDITOR</button>
       <button id="btnPlayblast" class="btn green">&#9679; PLAYBLAST &mdash; Make Movie</button>
     </div>
@@ -153,6 +154,15 @@
       <span class="ge-edit">
         <label>Frame <input type="number" id="geFrameInput" min="1" max="48" step="1" disabled></label>
         <label>Value <input type="number" id="geValueInput" step="0.1" disabled></label>
+      </span>
+      <span class="ge-shift">
+        <span class="ge-shift-label">SHIFT</span>
+        <button id="geShiftL" class="btn small" title="Shift time back">&#9664;</button>
+        <input type="number" id="geShiftFrames" value="1" min="1" step="1" title="Frames to shift">
+        <button id="geShiftR" class="btn small" title="Shift time forward">&#9654;</button>
+        <button id="geShiftD" class="btn small" title="Shift value down">&#9660;</button>
+        <input type="number" id="geShiftValue" value="0.1" step="0.1" title="Value to shift">
+        <button id="geShiftU" class="btn small" title="Shift value up">&#9650;</button>
       </span>
     </div>
   </div>

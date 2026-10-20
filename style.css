@@ -167,7 +167,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .ge-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .ge-group-name { color: #ffb042; font-weight: 800; font-size: 13px; padding: 8px 8px 2px; }
 .ge-hint { color: #8b93a0; font-size: 12.5px; line-height: 1.4; padding: 2px 8px 6px; }
-#geCanvas { flex: 1; min-width: 0; background: #101114; border: 1px solid #6e7682; border-radius: 10px; cursor: crosshair; }
+#geCanvas { flex: 1; min-width: 0; background: #101114; border: 1px solid #6e7682; border-radius: 10px; cursor: crosshair; touch-action: none; }
 .ge-foot {
   padding-top: 9px; font-size: 14.5px; color: #cfd5de; font-variant-numeric: tabular-nums;
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
@@ -180,6 +180,19 @@ a.btn { text-decoration: none; display: inline-block; }
 }
 .ge-edit input:focus { outline: 2px solid #ffb042; border-color: #ffb042; }
 .ge-edit input:disabled { opacity: .38; }
+.frames-box { color: #aab2be; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.frames-box input {
+  width: 64px; background: #101114; color: #ffffff; border: 1px solid #4a5160;
+  border-radius: 6px; padding: 4px 6px; font-size: 14px;
+}
+.frames-box input:focus { outline: 2px solid #ffb042; border-color: #ffb042; }
+.ge-shift { display: flex; gap: 6px; align-items: center; margin-left: 16px; }
+.ge-shift-label { color: #ffb042; font-weight: 800; font-size: 13px; }
+.ge-shift input {
+  width: 58px; background: #101114; color: #ffffff; border: 1px solid #4a5160;
+  border-radius: 6px; padding: 4px 6px; font-size: 14px;
+}
+.ge-shift input:focus { outline: 2px solid #ffb042; border-color: #ffb042; }
 
 /* ===== Modals (playblast) ===== */
 .modal {

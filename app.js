@@ -30,7 +30,7 @@ function downloadBlob(blob, name) {
 // ---------- Constants and state ----------
 const FPS = 24;
 const FIRST_FRAME = 1;
-const LAST_FRAME = 48;
+let LAST_FRAME = 48;   // scene length in frames; the user can change it
 const SCENE_NAME = 'my-scene';
 
 let currentFrame = 1;
@@ -155,7 +155,7 @@ const history = [];
 function pushHistory(label) {
   history.push({
     label,
-    state: JSON.parse(JSON.stringify({ channels, livePose, template, sliders }))
+    state: JSON.parse(JSON.stringify({ channels, livePose, template, sliders, frames: LAST_FRAME }))
   });
   if (history.length > 99) history.shift();   // keep the last 99 actions
 }
@@ -172,6 +172,7 @@ function undo() {
   $('sldTailBend').value = sliders.tailBend;
   $('sldLegLen').value = sliders.legLength;
   setTemplate(item.state.template);   // rebuilds the rig and applies the pose
+  setSceneLength(item.state.frames || 48);
   drawRuler();
   if (graphOpen) { buildGeChannelList(); drawGraph(); geInfo(); }
   say(`Undo: ${item.label}.`);
@@ -565,6 +566,18 @@ window.addEventListener('keydown', (e) => {
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
+  if (graphOpen && k.startsWith('arrow')) {
+    // Arrow keys shift picked keys while the Graph Editor is open.
+    e.preventDefault();
+    const fa = Math.max(1, parseInt($('geShiftFrames').value, 10) || 1);
+    const va = parseFloat($('geShiftValue').value);
+    const step = isFinite(va) ? va : 0.1;
+    if (k === 'arrowleft') nudgeKeys(-fa, 0);
+    else if (k === 'arrowright') nudgeKeys(fa, 0);
+    else if (k === 'arrowup') nudgeKeys(0, step);
+    else if (k === 'arrowdown') nudgeKeys(0, -step);
+    return;
+  }
   if (k === 'q') setTool('select');
   else if (k === 'w') setTool('move');
   else if (k === 'e') setTool('rotate');
@@ -651,6 +664,24 @@ $('btnPlay').addEventListener('click', () => (playing ? stopPlay() : startPlay()
 $('btnStop').addEventListener('click', () => { stopPlay(); });
 $('btnToStart').addEventListener('click', () => { stopPlay(); setFrame(FIRST_FRAME); });
 
+// ---------- Scene length (the Frames box in the timeline) ----------
+function setSceneLength(n) {
+  LAST_FRAME = clamp(Math.round(n) || 48, 12, 480);
+  $('sceneLen').value = LAST_FRAME;
+  $('geFrameInput').max = LAST_FRAME;
+  if (currentFrame > LAST_FRAME) setFrame(LAST_FRAME);
+  else { drawRuler(); if (graphOpen) drawGraph(); }
+}
+$('sceneLen').addEventListener('change', () => {
+  const v = parseInt($('sceneLen').value, 10);
+  if (!isFinite(v)) { $('sceneLen').value = LAST_FRAME; return; }
+  const n = clamp(Math.round(v), 12, 480);
+  if (n === LAST_FRAME) { $('sceneLen').value = LAST_FRAME; return; }
+  pushHistory('Scene length');
+  setSceneLength(n);
+  say(`Scene length is now ${LAST_FRAME} frames.`);
+});
+
 // ---------- Rig panel ----------
 function setTemplate(t) {
   template = t;
@@ -689,7 +720,7 @@ $('sldLegLen').addEventListener('input', (e) => { noteSliderStart('sldLegLen', '
 function projectData() {
   return {
     app: 'ANIMATE', version: 1, name: SCENE_NAME,
-    template, sliders: { ...sliders }, channels
+    template, sliders: { ...sliders }, channels, frames: LAST_FRAME
   };
 }
 $('btnSave').addEventListener('click', () => {
@@ -724,6 +755,7 @@ $('openFile').addEventListener('change', async (e) => {
     $('sldTailLen').value = sliders.tailLength;
     $('sldTailBend').value = sliders.tailBend;
     $('sldLegLen').value = sliders.legLength;
+    if (data.frames) setSceneLength(data.frames);
     stopPlay();
     setTemplate([1, 2, 3].includes(data.template) ? data.template : 2);
     setFrame(FIRST_FRAME);
@@ -910,9 +942,9 @@ function drawGraph() {
     gctx.lineWidth = 1;
     for (const p of [inPt, outPt]) {
       gctx.fillStyle = '#101114';
-      gctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+      gctx.fillRect(p.x - 6, p.y - 6, 12, 12);
       gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 2;
-      gctx.strokeRect(p.x - 5, p.y - 5, 10, 10);
+      gctx.strokeRect(p.x - 6, p.y - 6, 12, 12);
       gctx.lineWidth = 1;
     }
   }
@@ -1006,6 +1038,45 @@ document.querySelectorAll('.tan-btn').forEach((b) =>
     applyPose(); drawGraph(); geInfo(); drawRuler();
   }));
 
+// Shift keys in time or value with the arrow buttons.
+// Picked keys move. With no keys picked, whole picked curves move.
+function nudgeKeys(df, dv) {
+  let targets = geSelKeys;
+  if (!targets.length) {
+    targets = [];
+    for (const n of geSelected) {
+      for (const k of channels[n]) targets.push({ chan: n, key: k });
+    }
+  }
+  if (!targets.length) { say('No keys to shift. Pick keys, or pick a curve.'); return; }
+  pushHistory('Shift keys');
+  const moving = new Set(targets.map((t) => t.key));
+  for (const { key } of targets) {
+    if (df) key.frame = clamp(key.frame + df, FIRST_FRAME, LAST_FRAME);
+    if (dv) key.value = Math.round((key.value + dv) * 100) / 100;
+  }
+  for (const n of new Set(targets.map((t) => t.chan))) {
+    if (df) {
+      // One key per frame: a key in the way of a shifted key is removed.
+      const frames = new Set(targets.filter((t) => t.chan === n).map((t) => t.key.frame));
+      channels[n] = channels[n].filter((k) => moving.has(k) || !frames.has(k.frame));
+    }
+    sortKeys(n);
+  }
+  livePose = evalAll(currentFrame);
+  applyPose(); drawGraph(); geInfo(); drawRuler();
+  say(`Shifted ${targets.length} key${targets.length > 1 ? 's' : ''}.`);
+}
+function shiftFramesAmt() { return Math.max(1, parseInt($('geShiftFrames').value, 10) || 1); }
+function shiftValueAmt() {
+  const v = parseFloat($('geShiftValue').value);
+  return isFinite(v) ? v : 0.1;
+}
+$('geShiftL').addEventListener('click', () => nudgeKeys(-shiftFramesAmt(), 0));
+$('geShiftR').addEventListener('click', () => nudgeKeys(shiftFramesAmt(), 0));
+$('geShiftU').addEventListener('click', () => nudgeKeys(0, shiftValueAmt()));
+$('geShiftD').addEventListener('click', () => nudgeKeys(0, -shiftValueAmt()));
+
 // Type a new frame or value for the picked key in the Graph Editor.
 function geRefreshAfterEdit() {
   sortKeys(geKeyChannel);
@@ -1041,7 +1112,7 @@ geCanvas.addEventListener('pointerdown', (e) => {
   if (geSelectedKey && geHandles) {
     for (const side of ['in', 'out']) {
       const hp = geHandles[side];
-      if (hp && Math.hypot(hp.x - mx, hp.y - my) <= 11) {
+      if (hp && Math.hypot(hp.x - mx, hp.y - my) <= 16) {
         geDrag = { kind: 'handle', side, pushed: false };
         geCanvas.setPointerCapture(e.pointerId);
         return;
