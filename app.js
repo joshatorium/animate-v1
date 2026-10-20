@@ -139,6 +139,34 @@ function evalAll(frame) {
 // Tool drags change it by hand until the next frame change.
 let livePose = evalAll(1);
 
+// ---------- Undo (Ctrl+Z, up to 99 steps) ----------
+// Each step holds a full copy of the state before one action:
+// channels, the live pose, the template, and the sliders.
+const history = [];
+function pushHistory(label) {
+  history.push({
+    label,
+    state: JSON.parse(JSON.stringify({ channels, livePose, template, sliders }))
+  });
+  if (history.length > 99) history.shift();   // keep the last 99 actions
+}
+function undo() {
+  const item = history.pop();
+  if (!item) { say('Nothing to undo.'); return; }
+  channels = item.state.channels;
+  Object.assign(sliders, item.state.sliders);
+  livePose = item.state.livePose;
+  geSelectedKey = null;
+  $('sldSize').value = sliders.ballSize;
+  $('sldTailLen').value = sliders.tailLength;
+  $('sldTailBend').value = sliders.tailBend;
+  $('sldLegLen').value = sliders.legLength;
+  setTemplate(item.state.template);   // rebuilds the rig and applies the pose
+  drawRuler();
+  if (graphOpen) { buildGeChannelList(); drawGraph(); geInfo(); }
+  say(`Undo: ${item.label}.`);
+}
+
 // Lesson 1 bounce. Kept for the Lesson pick in a later step.
 // The scene does NOT load it at start: a new scene opens with no keys.
 // Contacts at frames 1, 13, 23, 31, 37, 43, 48. Peaks get lower.
@@ -396,6 +424,11 @@ function setFrame(f) {
   if (graphOpen) drawGraph();
 }
 
+// One undo step per tool drag: the state at the start of the drag.
+tc.addEventListener('dragging-changed', (e) => {
+  if (e.value) pushHistory('Move with tool');
+});
+
 // Dragging with a tool writes back into the live pose (not yet keyed).
 tc.addEventListener('objectChange', () => {
   if (!charGroup) return;
@@ -439,6 +472,7 @@ function writeKeys() {
   }
 }
 function setKey() {
+  pushHistory('Set key');
   writeKeys();
   say(`Key set at frame ${currentFrame}.`);
   drawRuler();
@@ -465,6 +499,7 @@ document.querySelectorAll('.chan-input').forEach((input) => {
     const name = input.dataset.chan;
     const v = parseFloat(input.value);
     if (!isFinite(v)) { updateSettings(); return; }
+    if (Math.round(v * 100) / 100 !== livePose[name]) pushHistory('Type value');
     livePose[name] = Math.round(v * 100) / 100;
     applyPose();
     if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
@@ -483,6 +518,7 @@ window.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
   const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
   if (k === 'q') setTool('select');
   else if (k === 'w') setTool('move');
   else if (k === 'e') setTool('rotate');
@@ -578,14 +614,30 @@ function setTemplate(t) {
   buildRig();
 }
 document.querySelectorAll('.tpl-btn').forEach((b) =>
-  b.addEventListener('click', () => setTemplate(Number(b.dataset.tpl))));
+  b.addEventListener('click', () => {
+    const t = Number(b.dataset.tpl);
+    if (t !== template) pushHistory('Change rig');
+    setTemplate(t);
+  }));
 $('btnBuildRig').addEventListener('click', () => { buildRig(); say('Rig built.'); });
-$('lessonSelect').addEventListener('change', (e) => setTemplate(Number(e.target.value)));
+$('lessonSelect').addEventListener('change', (e) => {
+  const t = Number(e.target.value);
+  if (t !== template) pushHistory('Change rig');
+  setTemplate(t);
+});
 
-$('sldSize').addEventListener('input', (e) => { sliders.ballSize = Number(e.target.value); buildRig(); });
-$('sldTailLen').addEventListener('input', (e) => { sliders.tailLength = Number(e.target.value); buildRig(); });
-$('sldTailBend').addEventListener('input', (e) => { sliders.tailBend = Number(e.target.value); applyPose(); });
-$('sldLegLen').addEventListener('input', (e) => { sliders.legLength = Number(e.target.value); buildRig(); });
+// One undo step per slider drag: save the state at the first move.
+const sliderBurst = {};
+function noteSliderStart(id, label) {
+  if (!sliderBurst[id]) { pushHistory(label); sliderBurst[id] = true; }
+}
+for (const id of ['sldSize', 'sldTailLen', 'sldTailBend', 'sldLegLen']) {
+  $(id).addEventListener('change', () => { sliderBurst[id] = false; });
+}
+$('sldSize').addEventListener('input', (e) => { noteSliderStart('sldSize', 'Ball size'); sliders.ballSize = Number(e.target.value); buildRig(); });
+$('sldTailLen').addEventListener('input', (e) => { noteSliderStart('sldTailLen', 'Tail length'); sliders.tailLength = Number(e.target.value); buildRig(); });
+$('sldTailBend').addEventListener('input', (e) => { noteSliderStart('sldTailBend', 'Tail bend'); sliders.tailBend = Number(e.target.value); applyPose(); });
+$('sldLegLen').addEventListener('input', (e) => { noteSliderStart('sldLegLen', 'Leg length'); sliders.legLength = Number(e.target.value); buildRig(); });
 
 // ---------- Save / Open project JSON ----------
 function projectData() {
@@ -607,6 +659,7 @@ $('openFile').addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!data.channels) throw new Error('no channels');
+    pushHistory('Open file');
     channels = emptyChannels();
     for (const name of CHANNEL_NAMES) {
       if (Array.isArray(data.channels[name])) {
@@ -632,9 +685,11 @@ $('openFile').addEventListener('change', async (e) => {
 
 // ---------- Graph Editor (separate window) ----------
 let graphOpen = false;
-let geChannel = 'moveY';
+let geChannel = 'moveY';                 // the main picked channel
+let geSelected = new Set(['moveY']);     // all picked channels (Shift+click adds more)
+let geKeyChannel = 'moveY';              // the channel of the picked key
 let geShowAll = false;
-let geSelectedKey = null;   // a key object inside channels[geChannel]
+let geSelectedKey = null;   // a key object inside channels[geKeyChannel]
 let geDrag = null;
 const geCanvas = $('geCanvas');
 const gctx = geCanvas.getContext('2d');
@@ -642,6 +697,10 @@ const gctx = geCanvas.getContext('2d');
 function buildGeChannelList() {
   const box = $('geChannels');
   box.innerHTML = '';
+  const hint = document.createElement('div');
+  hint.className = 'ge-hint';
+  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves.';
+  box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
     ['EXTRA', ['tailBend', 'legStep']]
@@ -652,10 +711,23 @@ function buildGeChannelList() {
     box.appendChild(h);
     for (const name of names) {
       const b = document.createElement('button');
-      b.className = 'ge-chan' + (name === geChannel ? ' active' : '');
+      b.className = 'ge-chan' + (geSelected.has(name) ? ' active' : '');
       b.innerHTML = `<span class="ge-dot" style="background:${CHAN_COLOR[name]}"></span>${CHAN_LABEL[name]}`;
-      b.addEventListener('click', () => {
-        geChannel = name; geSelectedKey = null;
+      b.addEventListener('click', (e) => {
+        if (e.shiftKey) {
+          // Shift+click: add this curve to the pick, or take it out.
+          if (geSelected.has(name)) {
+            if (geSelected.size > 1) geSelected.delete(name);
+          } else {
+            geSelected.add(name);
+          }
+          geChannel = name;
+        } else {
+          geSelected = new Set([name]);
+          geChannel = name;
+        }
+        geKeyChannel = geChannel;
+        geSelectedKey = null;
         buildGeChannelList(); drawGraph(); geInfo();
       });
       box.appendChild(b);
@@ -666,7 +738,7 @@ function geGeom() {
   const w = geCanvas.clientWidth, h = geCanvas.clientHeight;
   const padL = 48, padR = 14, padT = 14, padB = 26;
   // Auto value scale from the curves on show.
-  const names = geShowAll ? CHANNEL_NAMES : [geChannel];
+  const names = geShowAll ? CHANNEL_NAMES : [...geSelected];
   let lo = Infinity, hi = -Infinity;
   for (const n of names) {
     for (let f = FIRST_FRAME; f <= LAST_FRAME; f++) {
@@ -722,11 +794,11 @@ function drawGraph() {
     gctx.strokeStyle = '#454b56';
     gctx.beginPath(); gctx.moveTo(g.padL, g.y(0)); gctx.lineTo(w - 14, g.y(0)); gctx.stroke();
   }
-  // Curves. The picked channel is bright. The rest are faint.
-  const drawCurve = (name, bright) => {
+  // Curves. Picked channels are bright. The rest are faint.
+  const drawCurve = (name, bright, width) => {
     gctx.strokeStyle = CHAN_COLOR[name];
     gctx.globalAlpha = bright ? 1 : 0.4;
-    gctx.lineWidth = bright ? 3 : 1.5;
+    gctx.lineWidth = width;
     gctx.beginPath();
     for (let f = FIRST_FRAME; f <= LAST_FRAME; f += 0.25) {
       const x = g.x(f), y = g.y(evalChannel(name, f));
@@ -735,18 +807,23 @@ function drawGraph() {
     gctx.stroke();
     gctx.globalAlpha = 1; gctx.lineWidth = 1;
   };
-  if (geShowAll) for (const n of CHANNEL_NAMES) if (n !== geChannel) drawCurve(n, false);
-  drawCurve(geChannel, true);
-  // Key dots on the picked channel.
-  for (const k of channels[geChannel]) {
-    const x = g.x(k.frame), y = g.y(k.value);
-    gctx.beginPath(); gctx.arc(x, y, k === geSelectedKey ? 8 : 5.5, 0, Math.PI * 2);
-    gctx.fillStyle = k === geSelectedKey ? '#ffb042' : '#ffffff';
-    gctx.fill();
-    gctx.strokeStyle = CHAN_COLOR[geChannel]; gctx.lineWidth = 2; gctx.stroke();
-    gctx.lineWidth = 1;
+  if (geShowAll) for (const n of CHANNEL_NAMES) if (!geSelected.has(n)) drawCurve(n, false, 1.5);
+  for (const n of geSelected) if (n !== geChannel) drawCurve(n, true, 2.25);
+  drawCurve(geChannel, true, 3);
+  // Key dots on all picked channels.
+  for (const n of geSelected) {
+    for (const k of channels[n]) {
+      const x = g.x(k.frame), y = g.y(k.value);
+      gctx.beginPath(); gctx.arc(x, y, k === geSelectedKey ? 8 : 5.5, 0, Math.PI * 2);
+      gctx.fillStyle = k === geSelectedKey ? '#ffb042' : '#ffffff';
+      gctx.fill();
+      gctx.strokeStyle = CHAN_COLOR[n]; gctx.lineWidth = 2; gctx.stroke();
+      gctx.lineWidth = 1;
+    }
   }
-  $('geChanName').textContent = CHAN_LABEL[geChannel];
+  $('geChanName').textContent = geSelected.size === 1
+    ? CHAN_LABEL[geChannel]
+    : `${geSelected.size} curves picked`;
 }
 function geInfo() {
   const el = $('geInfo');
@@ -764,7 +841,7 @@ function geInfo() {
   if (document.activeElement !== fi) fi.value = geSelectedKey.frame;
   if (document.activeElement !== vi) vi.value = fmt(geSelectedKey.value);
   el.textContent =
-    `Picked key — Channel ${CHAN_LABEL[geChannel]} • Frame ${geSelectedKey.frame} • ` +
+    `Picked key — Channel ${CHAN_LABEL[geKeyChannel]} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
     'Use the tangent buttons to change how the curve moves through this key. ' +
     'Press Delete to remove this key.';
@@ -772,11 +849,12 @@ function geInfo() {
 // Remove the picked key from the picked channel.
 function deletePickedKey() {
   if (!geSelectedKey) { say('Pick a key in the Graph Editor first.'); return; }
-  const keys = channels[geChannel];
+  const keys = channels[geKeyChannel];
   const i = keys.indexOf(geSelectedKey);
   if (i < 0) { geSelectedKey = null; return; }
+  pushHistory('Delete key');
   keys.splice(i, 1);
-  say(`Key removed — ${CHAN_LABEL[geChannel]} frame ${geSelectedKey.frame}.`);
+  say(`Key removed — ${CHAN_LABEL[geKeyChannel]} frame ${geSelectedKey.frame}.`);
   geSelectedKey = null;
   geDrag = null;
   livePose = evalAll(currentFrame);
@@ -799,6 +877,7 @@ $('geShowAll').addEventListener('change', (e) => { geShowAll = e.target.checked;
 document.querySelectorAll('.tan-btn').forEach((b) =>
   b.addEventListener('click', () => {
     if (!geSelectedKey) { say('Pick a key in the Graph Editor first.'); return; }
+    if (geSelectedKey.tangent !== b.dataset.tan) pushHistory('Change tangent');
     geSelectedKey.tangent = b.dataset.tan;
     livePose = evalAll(currentFrame);
     applyPose(); drawGraph(); geInfo(); drawRuler();
@@ -806,7 +885,7 @@ document.querySelectorAll('.tan-btn').forEach((b) =>
 
 // Type a new frame or value for the picked key in the Graph Editor.
 function geRefreshAfterEdit() {
-  sortKeys(geChannel);
+  sortKeys(geKeyChannel);
   livePose = evalAll(currentFrame);
   applyPose(); drawGraph(); geInfo(); drawRuler();
 }
@@ -816,9 +895,10 @@ $('geFrameInput').addEventListener('change', () => {
   if (!geSelectedKey) return;
   const f = clamp(Math.round(parseFloat($('geFrameInput').value)), FIRST_FRAME, LAST_FRAME);
   if (!isFinite(f)) { geInfo(); return; }
+  if (f !== geSelectedKey.frame) pushHistory('Edit key frame');
   // One key per frame in a channel: a key in the way is replaced.
-  const clash = channels[geChannel].find((k) => k !== geSelectedKey && k.frame === f);
-  if (clash) channels[geChannel].splice(channels[geChannel].indexOf(clash), 1);
+  const clash = channels[geKeyChannel].find((k) => k !== geSelectedKey && k.frame === f);
+  if (clash) channels[geKeyChannel].splice(channels[geKeyChannel].indexOf(clash), 1);
   geSelectedKey.frame = f;
   geRefreshAfterEdit();
 });
@@ -826,6 +906,7 @@ $('geValueInput').addEventListener('change', () => {
   if (!geSelectedKey) return;
   const v = parseFloat($('geValueInput').value);
   if (!isFinite(v)) { geInfo(); return; }
+  if (Math.round(v * 100) / 100 !== geSelectedKey.value) pushHistory('Edit key value');
   geSelectedKey.value = Math.round(v * 100) / 100;
   geRefreshAfterEdit();
 });
@@ -833,9 +914,15 @@ $('geValueInput').addEventListener('change', () => {
 geCanvas.addEventListener('pointerdown', (e) => {
   const g = geGeom();
   const mx = e.offsetX, my = e.offsetY;
+  // Keys can be picked on any picked curve, not just the main one.
   let hit = null;
-  for (const k of channels[geChannel]) {
-    if (Math.hypot(g.x(k.frame) - mx, g.y(k.value) - my) <= 10) { hit = k; break; }
+  for (const n of geSelected) {
+    for (const k of channels[n]) {
+      if (Math.hypot(g.x(k.frame) - mx, g.y(k.value) - my) <= 10) {
+        hit = k; geKeyChannel = n; break;
+      }
+    }
+    if (hit) break;
   }
   geSelectedKey = hit;
   geDrag = hit ? { moved: false } : null;
@@ -844,11 +931,12 @@ geCanvas.addEventListener('pointerdown', (e) => {
 });
 geCanvas.addEventListener('pointermove', (e) => {
   if (!geDrag || !geSelectedKey) return;
+  if (!geDrag.pushed) { pushHistory('Move key'); geDrag.pushed = true; }
   const g = geGeom();
   geDrag.moved = true;
   geSelectedKey.frame = clamp(Math.round(g.frame(e.offsetX)), FIRST_FRAME, LAST_FRAME);
   geSelectedKey.value = Math.round(g.value(e.offsetY) * 100) / 100;
-  sortKeys(geChannel);
+  sortKeys(geKeyChannel);
   livePose = evalAll(currentFrame);
   applyPose(); drawGraph(); geInfo(); drawRuler();
 });
