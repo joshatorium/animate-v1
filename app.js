@@ -138,7 +138,8 @@ function evalAll(frame) {
 // Tool drags change it by hand until the next frame change.
 let livePose = evalAll(1);
 
-// Lesson 1 bounce, loaded at start so Play works on first load.
+// Lesson 1 bounce. Kept for the Lesson pick in a later step.
+// The scene does NOT load it at start: a new scene opens with no keys.
 // Contacts at frames 1, 13, 23, 31, 37, 43, 48. Peaks get lower.
 function loadLessonBounce() {
   channels = emptyChannels();
@@ -172,7 +173,8 @@ function loadLessonBounce() {
   addKey('legStep', 36, 0.6, 'auto');
   addKey('legStep', 48, 0, 'auto');
 }
-loadLessonBounce();
+// A new scene opens clean: no keys on any channel.
+channels = emptyChannels();
 
 // ---------- Three.js scene ----------
 const host = $('canvasHost');
@@ -251,8 +253,9 @@ scene.add(tc);
 tc.setMode('translate');
 
 // ---------- The character rig ----------
-// charGroup is the control. Move and rotate channels drive it.
-// Scale channels squash the ball mesh inside it.
+// charGroup is the control. Its pivot is the CENTER of the ball.
+// Move and rotate channels drive it, so the ball turns around its center.
+// Scale channels squash the ball mesh around the same center.
 let charGroup = null, ballMesh = null, tailRoot = null, tailJoints = [], legL = null, legR = null;
 let ghostA = null, ghostB = null;
 let ballRadius = 0.9, legClear = 0;
@@ -309,7 +312,7 @@ function buildRig() {
     const mkLeg = (name, z) => {
       const hip = new THREE.Group();
       hip.name = name;
-      hip.position.set(0, legLen, z);
+      hip.position.set(0, -ballRadius, z);   // hip at the bottom of the ball (pivot is the center)
       const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, legLen, 10), legMat);
       cyl.position.y = -legLen / 2;
       const foot = new THREE.Mesh(unitSphere, legMat);
@@ -336,15 +339,15 @@ function buildRig() {
 function applyPose() {
   if (!charGroup) return;
   const p = livePose;
-  charGroup.position.set(p.moveX, p.moveY, p.moveZ);
+  // The group origin IS the ball center. moveY 0 = the ball rests on
+  // the ground (or on its legs), so the center sits one radius up.
+  charGroup.position.set(p.moveX, legClear + ballRadius + p.moveY, p.moveZ);
   charGroup.rotation.set(rad(p.rotateX), rad(p.rotateY), rad(p.rotateZ));
-  // Squash keeps the bottom of the ball on the ground line:
-  // the ball center rises and falls with scaleY.
-  const centerY = legClear + ballRadius * p.scaleY;
-  ballMesh.position.y = centerY;
+  // Squash grows and shrinks around the center. The center does not move.
+  ballMesh.position.y = 0;
   ballMesh.scale.set(ballRadius * p.scaleX, ballRadius * p.scaleY, ballRadius * p.scaleZ);
   if (tailRoot) {
-    tailRoot.position.set(ballRadius * 0.72, centerY + ballRadius * 0.3, 0);
+    tailRoot.position.set(ballRadius * 0.72, ballRadius * 0.3, 0);
     const total = p.tailBend + sliders.tailBend;
     const each = tailJoints.length ? total / tailJoints.length : 0;
     for (const j of tailJoints) j.rotation.z = each;
@@ -364,7 +367,7 @@ function updateGhosts() {
     const gp = evalAll(f);
     mesh.position.set(
       gp.moveX,
-      gp.moveY + legClear + ballRadius * gp.scaleY,
+      gp.moveY + legClear + ballRadius,
       gp.moveZ
     );
     mesh.scale.set(ballRadius * gp.scaleX, ballRadius * gp.scaleY, ballRadius * gp.scaleZ);
@@ -401,7 +404,8 @@ tc.addEventListener('objectChange', () => {
     charGroup.scale.set(1, 1, 1);
   } else {
     livePose.moveX = charGroup.position.x;
-    livePose.moveY = charGroup.position.y;
+    // The group sits at the ball center: take the rest height back off.
+    livePose.moveY = charGroup.position.y - (legClear + ballRadius);
     livePose.moveZ = charGroup.position.z;
     livePose.rotateX = charGroup.rotation.x * 180 / Math.PI;
     livePose.rotateY = charGroup.rotation.y * 180 / Math.PI;
@@ -450,6 +454,10 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'r') setTool('scale');
   else if (k === 's') setKey();
   else if (k === 'g') setGhost(!ghostOn);
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && graphOpen) {
+    e.preventDefault();
+    deletePickedKey();
+  }
   else if (k === ' ') { e.preventDefault(); playing ? stopPlay() : startPlay(); }
 });
 
@@ -716,7 +724,21 @@ function geInfo() {
   el.textContent =
     `Picked key — Channel ${CHAN_LABEL[geChannel]} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
-    'Use the tangent buttons to change how the curve moves through this key.';
+    'Use the tangent buttons to change how the curve moves through this key. ' +
+    'Press Delete to remove this key.';
+}
+// Remove the picked key from the picked channel.
+function deletePickedKey() {
+  if (!geSelectedKey) { say('Pick a key in the Graph Editor first.'); return; }
+  const keys = channels[geChannel];
+  const i = keys.indexOf(geSelectedKey);
+  if (i < 0) { geSelectedKey = null; return; }
+  keys.splice(i, 1);
+  say(`Key removed — ${CHAN_LABEL[geChannel]} frame ${geSelectedKey.frame}.`);
+  geSelectedKey = null;
+  geDrag = null;
+  livePose = evalAll(currentFrame);
+  applyPose(); drawGraph(); geInfo(); drawRuler();
 }
 function openGraph() {
   graphOpen = true;
