@@ -49,26 +49,29 @@ const CHANNEL_NAMES = [
   'moveX', 'moveY', 'moveZ',
   'rotateX', 'rotateY', 'rotateZ',
   'scaleX', 'scaleY', 'scaleZ',
-  'tailBend', 'legStep'
+  'tail1', 'tail2', 'tail3', 'legStep'
 ];
 const DEFAULTS = {
   moveX: 0, moveY: 0, moveZ: 0,
   rotateX: 0, rotateY: 0, rotateZ: 0,
   scaleX: 1, scaleY: 1, scaleZ: 1,
-  tailBend: 0, legStep: 0
+  tail1: 0, tail2: 0, tail3: 0, legStep: 0
 };
 const CHAN_LABEL = {
   moveX: 'Move X', moveY: 'Move Y', moveZ: 'Move Z',
   rotateX: 'Rotate X', rotateY: 'Rotate Y', rotateZ: 'Rotate Z',
   scaleX: 'Scale X', scaleY: 'Scale Y', scaleZ: 'Scale Z',
-  tailBend: 'Tail Bend', legStep: 'Leg Step'
+  tail1: 'Tail 1', tail2: 'Tail 2', tail3: 'Tail 3', legStep: 'Leg Step'
 };
 const CHAN_COLOR = {
   moveX: '#ff6b6b', moveY: '#5cd68c', moveZ: '#54aaff',
   rotateX: '#ff9d7a', rotateY: '#a8e063', rotateZ: '#7ac7ff',
   scaleX: '#ffb042', scaleY: '#ffd76e', scaleZ: '#e0aaff',
-  tailBend: '#5ad2dc', legStep: '#c792ff'
+  tail1: '#5ad2dc', tail2: '#ff7eb6', tail3: '#fab005', legStep: '#c792ff'
 };
+// The tail has three controllers. Each one bends the tail from its
+// joint onward, so the tail can make C shapes and S shapes.
+const TAIL_CHANNELS = ['tail1', 'tail2', 'tail3'];
 const TRANSFORM_CHANNELS = [
   'moveX', 'moveY', 'moveZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ'
 ];
@@ -202,11 +205,18 @@ function loadLessonBounce() {
     addKey('scaleY', f, 1.06, 'auto');   // a small stretch near the top
     addKey('scaleX', f, 0.94, 'auto');
   }
-  addKey('tailBend', 1, 0, 'auto');
-  addKey('tailBend', 12, -0.5, 'auto');
-  addKey('tailBend', 24, 0.5, 'auto');
-  addKey('tailBend', 36, -0.35, 'auto');
-  addKey('tailBend', 48, 0.2, 'auto');
+  // Tail controllers in degrees. Tail 2 runs against Tail 1 a beat
+  // later: that lag is what makes the overlap read.
+  addKey('tail1', 1, 0, 'auto');
+  addKey('tail1', 12, -28, 'auto');
+  addKey('tail1', 24, 28, 'auto');
+  addKey('tail1', 36, -20, 'auto');
+  addKey('tail1', 48, 10, 'auto');
+  addKey('tail2', 1, 0, 'auto');
+  addKey('tail2', 16, 22, 'auto');
+  addKey('tail2', 28, -22, 'auto');
+  addKey('tail2', 40, 14, 'auto');
+  addKey('tail2', 48, -6, 'auto');
   addKey('legStep', 1, 0, 'auto');
   addKey('legStep', 12, 0.6, 'auto');
   addKey('legStep', 24, -0.6, 'auto');
@@ -333,6 +343,9 @@ tc.setMode('translate');
 // Move and rotate channels drive it, so the ball turns around its center.
 // Scale channels squash the ball mesh around the same center.
 let charGroup = null, ballMesh = null, tailRoot = null, tailJoints = [], legL = null, legR = null;
+let tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
+let tailCtrlMeshes = [];      // the ring meshes in the 3D view
+let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostA = null, ghostB = null;
 let ballRadius = 0.9, legClear = 0;
 
@@ -361,6 +374,8 @@ function buildRig() {
   charGroup.add(ballMesh);
 
   tailJoints = []; tailRoot = null; legL = null; legR = null;
+  tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
+  tailCtrlMeshes = [];
   if (template === 2) {
     // A chain of small spheres. Each joint bends a little.
     const count = Math.round(sliders.tailLength);
@@ -380,6 +395,31 @@ function buildRig() {
       parent.add(joint);
       tailJoints.push(joint);
       parent = joint;
+    }
+    // Three controllers along the tail: base, mid, and tip.
+    // Each controller is a ring in the 3D view. Click a ring to pick
+    // it, then rotate it. Its bend runs from its joint to the tip.
+    const ctrlIdx = {
+      tail1: 0,
+      tail2: Math.floor(count / 3),
+      tail3: Math.floor((2 * count) / 3)
+    };
+    const seen = new Set();
+    for (const name of TAIL_CHANNELS) {
+      const idx = ctrlIdx[name];
+      if (idx >= count || seen.has(idx)) continue;
+      seen.add(idx);
+      const joint = tailJoints[idx];
+      tailCtrlJoints[name] = joint;
+      const r = ballRadius * (0.34 - idx * 0.035) + 0.14;
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(r, 0.035, 10, 28),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
+      );
+      ring.rotation.y = Math.PI / 2;   // the ring stands around the tail
+      ring.userData.ctrl = name;
+      joint.add(ring);
+      tailCtrlMeshes.push(ring);
     }
   }
   if (template === 3) {
@@ -407,6 +447,7 @@ function buildRig() {
   ghostA.name = 'GhostBefore'; ghostB.name = 'GhostAfter';
   scene.add(ghostA); scene.add(ghostB);
   scene.add(charGroup);
+  selectedCtrl = 'ball';
   tc.attach(charGroup);
   applyPose();
 }
@@ -424,9 +465,16 @@ function applyPose() {
   ballMesh.scale.set(ballRadius * p.scaleX, ballRadius * p.scaleY, ballRadius * p.scaleZ);
   if (tailRoot) {
     tailRoot.position.set(ballRadius * 0.72, ballRadius * 0.3, 0);
-    const total = p.tailBend + sliders.tailBend;
-    const each = tailJoints.length ? total / tailJoints.length : 0;
-    for (const j of tailJoints) j.rotation.z = each;
+    // The Tail bend slider is a soft base curl, spread over all joints.
+    const each = tailJoints.length ? sliders.tailBend / tailJoints.length : 0;
+    for (const j of tailJoints) j.rotation.set(0, 0, each);
+    // Each controller adds its own bend at its joint, in degrees.
+    // The bend runs from that joint to the tip, so Tail 1 one way
+    // and Tail 2 the other way makes an S shape.
+    for (const name of TAIL_CHANNELS) {
+      const j = tailCtrlJoints[name];
+      if (j) j.rotation.z = each + rad(p[name]);
+    }
   }
   if (legL) { legL.rotation.z = p.legStep; legR.rotation.z = -p.legStep; }
   updateGhosts();
@@ -479,6 +527,18 @@ tc.addEventListener('dragging-changed', (e) => {
 // Dragging with a tool writes back into the live pose (not yet keyed).
 tc.addEventListener('objectChange', () => {
   if (!charGroup) return;
+  if (selectedCtrl !== 'ball') {
+    // A tail controller is picked. Only its bend (rotation z) counts.
+    const j = tailCtrlJoints[selectedCtrl];
+    if (j) {
+      const base = tailJoints.length ? sliders.tailBend / tailJoints.length : 0;
+      const deg = (j.rotation.z - base) * 180 / Math.PI;
+      livePose[selectedCtrl] = Math.round(clamp(deg, -170, 170) * 100) / 100;
+    }
+    applyPose();
+    if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
+    return;
+  }
   if (tc.mode === 'scale') {
     // Scale lives on the ball, not the whole group. Move it across.
     livePose.scaleX *= charGroup.scale.x;
@@ -500,20 +560,56 @@ tc.addEventListener('objectChange', () => {
 });
 
 // ---------- Tools ----------
+function selectedObject() {
+  return selectedCtrl === 'ball' ? charGroup : tailCtrlJoints[selectedCtrl];
+}
 function setTool(tool) {
   activeTool = tool;
   document.querySelectorAll('.tool-btn[data-tool]').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
   if (tool === 'select') { tc.detach(); return; }
-  tc.attach(charGroup);
+  const obj = selectedObject();
+  if (obj) tc.attach(obj);
   tc.setMode(tool === 'move' ? 'translate' : tool);
 }
+
+// Pick the ball or a tail controller by clicking in the 3D view.
+function selectControl(name) {
+  if (name !== 'ball' && !tailCtrlJoints[name]) return;
+  selectedCtrl = name;
+  if (name === 'ball') {
+    say('Ball picked.');
+  } else {
+    say(`${CHAN_LABEL[name]} picked. Use the Rotate tool (E) and drag the round arrows.`);
+    if (activeTool === 'move' || activeTool === 'scale') setTool('rotate');
+  }
+  if (activeTool !== 'select') {
+    const obj = selectedObject();
+    if (obj) tc.attach(obj);
+  }
+}
+const raycaster = new THREE.Raycaster();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || e.altKey || !charGroup) return;
+  if (tc.axis) return;   // the press is on the tool gizmo, not the rig
+  const rect = renderer.domElement.getBoundingClientRect();
+  const nd = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(nd, camera);
+  const ringHits = raycaster.intersectObjects(tailCtrlMeshes, false);
+  if (ringHits.length) { selectControl(ringHits[0].object.userData.ctrl); return; }
+  const rigHits = raycaster.intersectObject(charGroup, true);
+  if (rigHits.length && selectedCtrl !== 'ball') selectControl('ball');
+});
 document.querySelectorAll('.tool-btn[data-tool]').forEach((b) =>
   b.addEventListener('click', () => setTool(b.dataset.tool)));
 
-// Write keys for all transform channels at this frame, from the live pose.
+// Write keys for ALL channels at this frame, from the live pose:
+// the ball transform, the three tail controllers, and leg step.
 function writeKeys() {
-  for (const name of TRANSFORM_CHANNELS) {
+  for (const name of CHANNEL_NAMES) {
     const old = channels[name].find((k) => k.frame === currentFrame);
     addKey(name, currentFrame, Math.round(livePose[name] * 100) / 100, old ? old.tangent : 'auto');
   }
@@ -750,6 +846,15 @@ $('openFile').addEventListener('change', async (e) => {
         sortKeys(name);
       }
     }
+    // Old files have one Tail Bend channel. Its keys move to Tail 1,
+    // with values changed from bend units to degrees.
+    if (Array.isArray(data.channels.tailBend)) {
+      for (const k of data.channels.tailBend) {
+        if (typeof k.frame === 'number' && typeof k.value === 'number') {
+          addKey('tail1', k.frame, Math.round(k.value * 57.3 * 100) / 100, k.tangent || 'auto');
+        }
+      }
+    }
     if (data.sliders) Object.assign(sliders, data.sliders);
     $('sldSize').value = sliders.ballSize;
     $('sldTailLen').value = sliders.tailLength;
@@ -807,7 +912,7 @@ function buildGeChannelList() {
   box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
-    ['EXTRA', ['tailBend', 'legStep']]
+    ['EXTRA', ['tail1', 'tail2', 'tail3', 'legStep']]
   ];
   for (const [gname, names] of groups) {
     const h = document.createElement('div');
