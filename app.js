@@ -233,6 +233,10 @@ const scene = new THREE.Scene();
 // paper color, so no view can fall through to black.
 const PAPER_COLOR = 0xfffef7;
 scene.background = new THREE.Color(PAPER_COLOR);
+// Debug switches for view tests: ?bg=red paints the backdrop red,
+// ?floor=off hides the floor sheet. Normal use ignores both.
+const DEBUG_Q = new URLSearchParams(location.search);
+if (DEBUG_Q.get('bg') === 'red') scene.background = new THREE.Color(0xff0000);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 camera.position.set(5.5, 3.6, 8.5);
 
@@ -274,6 +278,7 @@ const floorSheet = new THREE.Mesh(
 );
 floorSheet.rotation.x = -Math.PI / 2;
 floorSheet.position.y = -0.001;
+if (DEBUG_Q.get('floor') === 'off') floorSheet.visible = false;
 scene.add(floorSheet);
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(24, 24),
