@@ -547,6 +547,7 @@ function buildRig() {
   // line too. Both ride on the ball, squash and all.
   const seam = new THREE.Mesh(new THREE.TorusGeometry(1.005, 0.022, 10, 72), seamMat);
   seam.name = 'CenterLine';
+  seam.rotation.x = Math.PI / 2;   // the line lies flat: a horizontal equator
   ballMesh.add(seam);
   const tick = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), seamMat);
   tick.position.set(1.005, 0, 0);
