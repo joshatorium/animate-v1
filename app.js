@@ -387,72 +387,124 @@ let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostA = null, ghostB = null;
 let ballRadius = 0.9, legClear = 0;
 
-// Pencil look: flat toon bands kill the smooth 3D shine.
-// A drawn hatch texture sits on the surface. An ink shell draws
-// the edge. The form still turns in 3D, but the face reads 2D.
-const pencilGradient = (() => {
-  const colors = new Uint8Array([105, 160, 215, 255]);
-  const tex = new THREE.DataTexture(colors, colors.length, 1, THREE.RedFormat);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.needsUpdate = true;
-  return tex;
-})();
-function makePencilTexture(base, hatch) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 256;
-  const x = c.getContext('2d');
-  x.fillStyle = base; x.fillRect(0, 0, c.width, c.height);
-  x.strokeStyle = hatch; x.lineCap = 'round';
-  // Short diagonal pencil strokes.
-  for (let i = 0; i < 260; i++) {
-    const px = (i * 47) % 280 - 12;
-    const py = (i * 83) % 256;
-    const len = 12 + (i % 5) * 5;
-    x.globalAlpha = 0.10 + (i % 4) * 0.035;
-    x.lineWidth = i % 7 === 0 ? 2.2 : 1.2;
-    x.beginPath(); x.moveTo(px, py); x.lineTo(px + len, py + len * 0.45); x.stroke();
-  }
-  // Sparse cross strokes for the hand-drawn feel.
-  for (let i = 0; i < 90; i++) {
-    const px = (i * 67) % 256;
-    const py = (i * 41) % 280 - 12;
-    const len = 9 + (i % 4) * 4;
-    x.globalAlpha = 0.07 + (i % 3) * 0.025;
-    x.lineWidth = 1;
-    x.beginPath(); x.moveTo(px, py); x.lineTo(px + len * 0.4, py + len); x.stroke();
-  }
-  x.globalAlpha = 1;
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 1);
-  tex.anisotropy = 4;
-  return tex;
+// Sketch look, after the user's pencil-sphere sketch:
+// white paper fill, graphite hatching that grows dense in
+// the shade, cross-hatch in the dark core, a thin ink edge.
+// The hatch sits in screen space, like lines drawn on paper.
+// The light still turns with the form, so the ball stays 3D.
+function makeSketchMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      lightDir: { value: new THREE.Vector3(0.55, 0.75, 0.6) }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewPos;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 lightDir;
+      varying vec3 vNormal;
+      varying vec3 vViewPos;
+      float hatchLine(float u) {
+        float s = abs(fract(u) - 0.5);
+        return smoothstep(0.24, 0.10, s);
+      }
+      void main() {
+        vec3 n = normalize(vNormal);
+        vec3 v = normalize(-vViewPos);
+        float ndl = dot(n, normalize(lightDir));
+        float tone = clamp(ndl * 0.62 + 0.38, 0.0, 1.0);
+        vec2 fc = gl_FragCoord.xy;
+        float wob = sin(fc.y * 0.33) * 0.7 + sin(fc.x * 0.19) * 0.5;
+        float l1 = hatchLine((fc.x + fc.y + wob) / 7.0);
+        float l2 = hatchLine((fc.x - fc.y - wob) / 8.0);
+        float ink = 0.0;
+        ink += l1 * 0.60 * smoothstep(0.92, 0.60, tone);
+        ink += l2 * 0.62 * smoothstep(0.55, 0.32, tone);
+        ink += 0.35 * smoothstep(0.30, 0.05, tone);
+        float rim = pow(1.0 - abs(dot(n, v)), 2.4);
+        ink += rim * 0.20;
+        vec3 col = vec3(1.0, 0.997, 0.988);
+        col *= mix(0.88, 1.0, tone);
+        col = mix(col, vec3(0.13, 0.13, 0.14), clamp(ink, 0.0, 1.0) * 0.88);
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  });
 }
+const sketchMat = makeSketchMaterial();
 // Ink outline: a slightly larger shell worn inside-out.
-// It makes the ball and tail read as drawn, not rendered.
-const outlineMat = new THREE.MeshBasicMaterial({ color: 0x263650, side: THREE.BackSide });
+// A second faint shell sits just outside it: the double
+// stroke of a hand-drawn line.
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x1f2328, side: THREE.BackSide });
+const outlineMatSoft = new THREE.MeshBasicMaterial({
+  color: 0x1f2328, side: THREE.BackSide, transparent: true, opacity: 0.35, depthWrite: false
+});
 function addOutline(mesh, grow) {
   const ol = new THREE.Mesh(unitSphere, outlineMat);
   ol.scale.setScalar(grow);
   mesh.add(ol);
+  const ol2 = new THREE.Mesh(unitSphere, outlineMatSoft);
+  ol2.scale.setScalar(grow + 0.022);
+  mesh.add(ol2);
   return ol;
 }
-const ballMat = new THREE.MeshToonMaterial({
-  map: makePencilTexture('#ffdc9e', '#9a5a20'), gradientMap: pencilGradient
+const ballMat = sketchMat;
+const tailMat = sketchMat;
+const legMat = sketchMat;
+const ghostMat = new THREE.MeshBasicMaterial({
+  color: 0xb7c9da, transparent: true, opacity: 0.18, depthWrite: false
 });
-const tailMat = new THREE.MeshToonMaterial({
-  map: makePencilTexture('#ffd09a', '#94511d'), gradientMap: pencilGradient
-});
-const legMat = new THREE.MeshToonMaterial({
-  map: makePencilTexture('#f6bd78', '#8a4b1d'), gradientMap: pencilGradient
-});
-const ghostMat = new THREE.MeshToonMaterial({
-  color: 0xa9c6de, transparent: true, opacity: 0.20, depthWrite: false,
-  gradientMap: pencilGradient
-});
+
+// Scribble cast shadow: a flat patch of horizontal pencil
+// strokes on the floor, like the shadow in the sketch.
+// It follows the ball and fades as the ball rises.
+function makeShadowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const x = c.getContext('2d');
+  x.strokeStyle = '#23262b'; x.lineCap = 'round';
+  for (let i = 0; i < 340; i++) {
+    const t = Math.pow(Math.random() * 2 - 1, 3);
+    const py = 64 + t * 52;
+    const extent = 118 * Math.cos(((py - 64) / 64) * Math.PI * 0.45);
+    if (extent < 8) continue;
+    const x0 = 128 - extent * (0.35 + Math.random() * 0.65);
+    const x1 = 128 + extent * (0.35 + Math.random() * 0.65);
+    x.globalAlpha = 0.05 + Math.random() * 0.11;
+    x.lineWidth = 1.4 + Math.random() * 1.8;
+    x.beginPath(); x.moveTo(x0, py); x.lineTo(x1, py + (Math.random() * 2 - 1)); x.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const sketchShadow = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ map: makeShadowTexture(), transparent: true, depthWrite: false })
+);
+sketchShadow.rotation.x = -Math.PI / 2;
+sketchShadow.rotation.z = -0.12;
+sketchShadow.position.y = 0.006;
+sketchShadow.renderOrder = 1;
+sketchShadow.visible = false;
+scene.add(sketchShadow);
+function updateSketchShadow() {
+  if (!charGroup) { sketchShadow.visible = false; return; }
+  sketchShadow.visible = true;
+  const h = Math.max(0, livePose.moveY);   // height above the rest pose
+  const shrink = clamp(1.18 - h * 0.13, 0.55, 1.18);
+  sketchShadow.position.x = charGroup.position.x - 0.38 * ballRadius;
+  sketchShadow.position.z = charGroup.position.z - 0.22 * ballRadius;
+  sketchShadow.scale.set(
+    3.4 * ballRadius * shrink * Math.max(livePose.scaleX, 0.4),
+    1.5 * ballRadius * shrink, 1);
+  sketchShadow.material.opacity = clamp(0.92 - h * 0.20, 0.30, 0.92);
+}
 const unitSphere = new THREE.SphereGeometry(1, 32, 24);
 
 function disposeGroup(g) {
@@ -469,7 +521,7 @@ function buildRig() {
 
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
   ballMesh.name = 'Ball';
-  addOutline(ballMesh, 1.06);
+  addOutline(ballMesh, 1.04);
   charGroup.add(ballMesh);
 
   tailJoints = []; tailRoot = null; legL = null; legR = null;
@@ -490,7 +542,7 @@ function buildRig() {
       const r = ballRadius * (0.34 - i * 0.035);
       seg.scale.setScalar(Math.max(r, 0.08));
       seg.position.x = segLen / 2;
-      addOutline(seg, 1.09);
+      addOutline(seg, 1.06);
       joint.add(seg);
       parent.add(joint);
       tailJoints.push(joint);
@@ -540,7 +592,7 @@ function buildRig() {
       const foot = new THREE.Mesh(unitSphere, legMat);
       foot.scale.set(0.24, 0.12, 0.16);
       foot.position.set(0.1, -legLen, 0);
-      addOutline(foot, 1.10);
+      addOutline(foot, 1.07);
       hip.add(cyl); hip.add(foot);
       charGroup.add(hip);
       return hip;
@@ -1820,6 +1872,7 @@ function loop() {
     if (f !== currentFrame) setFrame(f);
   }
   if (fbxMixer) fbxMixer.update(dt);
+  updateSketchShadow();
   renderer.render(scene, camera);
 }
 function layout() {
