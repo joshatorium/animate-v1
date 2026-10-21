@@ -229,7 +229,10 @@ channels = emptyChannels();
 // ---------- Three.js scene ----------
 const host = $('canvasHost');
 const scene = new THREE.Scene();
-// No scene background: the notebook paper CSS shows through.
+// The paper lives inside the 3D view: the scene backdrop is flat
+// paper color, so no view can fall through to black.
+const PAPER_COLOR = 0xfffef7;
+scene.background = new THREE.Color(PAPER_COLOR);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 camera.position.set(5.5, 3.6, 8.5);
 
@@ -253,20 +256,20 @@ function makePaperTexture() {
   const x = c.getContext('2d');
   x.fillStyle = '#fffef7'; x.fillRect(0, 0, c.width, c.height);
   x.strokeStyle = 'rgba(120, 165, 220, 0.55)'; x.lineWidth = 2;
-  for (let y = 44; y < c.height; y += 44) {
+  for (let y = 36; y < c.height; y += 32) {
     x.beginPath(); x.moveTo(0, y); x.lineTo(c.width, y); x.stroke();
   }
   x.strokeStyle = 'rgba(232, 138, 138, 0.85)'; x.lineWidth = 3;
   x.beginPath(); x.moveTo(72, 0); x.lineTo(72, c.height); x.stroke();
-  x.strokeStyle = '#3c4a63'; x.lineWidth = 10;
-  x.strokeRect(5, 5, c.width - 10, c.height - 10);
+  x.strokeStyle = 'rgba(60, 74, 99, 0.55)'; x.lineWidth = 7;
+  x.strokeRect(16, 16, c.width - 32, c.height - 32);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
 }
 const floorSheet = new THREE.Mesh(
-  new THREE.PlaneGeometry(16, 12),
+  new THREE.PlaneGeometry(30, 22),
   new THREE.MeshBasicMaterial({ map: makePaperTexture() })
 );
 floorSheet.rotation.x = -Math.PI / 2;
@@ -1417,9 +1420,8 @@ async function playblast() {
   renderer.setSize(1280, 720, false);
   camera.aspect = 1280 / 720; camera.updateProjectionMatrix();
   tc.visible = false; tc.enabled = false;
-  // The movie holds flat paper color. The ruled lines are screen-only:
-  // canvas capture cannot see CSS, so the lines stay out of the movie.
-  scene.background = new THREE.Color(0xfffef7);
+  // The backdrop is already paper color, in the app and in the movie.
+  scene.background = new THREE.Color(PAPER_COLOR);
   updateGhosts(); // ghosts hide while playblastActive is true
 
   $('pbBox').classList.remove('hidden');
@@ -1450,7 +1452,7 @@ async function playblast() {
     // Restore the normal view.
     renderer.setSize(hostW, hostH, false);
     camera.aspect = hostW / hostH; camera.updateProjectionMatrix();
-    scene.background = null;
+    scene.background = new THREE.Color(PAPER_COLOR);
     tc.visible = true; tc.enabled = true;
     playblastActive = false;
     $('pbBox').classList.add('hidden');
