@@ -387,20 +387,71 @@ let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostA = null, ghostB = null;
 let ballRadius = 0.9, legClear = 0;
 
+// Pencil look: flat toon bands kill the smooth 3D shine.
+// A drawn hatch texture sits on the surface. An ink shell draws
+// the edge. The form still turns in 3D, but the face reads 2D.
+const pencilGradient = (() => {
+  const colors = new Uint8Array([105, 160, 215, 255]);
+  const tex = new THREE.DataTexture(colors, colors.length, 1, THREE.RedFormat);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+})();
+function makePencilTexture(base, hatch) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = base; x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = hatch; x.lineCap = 'round';
+  // Short diagonal pencil strokes.
+  for (let i = 0; i < 260; i++) {
+    const px = (i * 47) % 280 - 12;
+    const py = (i * 83) % 256;
+    const len = 12 + (i % 5) * 5;
+    x.globalAlpha = 0.10 + (i % 4) * 0.035;
+    x.lineWidth = i % 7 === 0 ? 2.2 : 1.2;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + len, py + len * 0.45); x.stroke();
+  }
+  // Sparse cross strokes for the hand-drawn feel.
+  for (let i = 0; i < 90; i++) {
+    const px = (i * 67) % 256;
+    const py = (i * 41) % 280 - 12;
+    const len = 9 + (i % 4) * 4;
+    x.globalAlpha = 0.07 + (i % 3) * 0.025;
+    x.lineWidth = 1;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + len * 0.4, py + len); x.stroke();
+  }
+  x.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 1);
+  tex.anisotropy = 4;
+  return tex;
+}
 // Ink outline: a slightly larger shell worn inside-out.
 // It makes the ball and tail read as drawn, not rendered.
-const outlineMat = new THREE.MeshBasicMaterial({ color: 0x2e3d5c, side: THREE.BackSide });
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x263650, side: THREE.BackSide });
 function addOutline(mesh, grow) {
   const ol = new THREE.Mesh(unitSphere, outlineMat);
   ol.scale.setScalar(grow);
   mesh.add(ol);
   return ol;
 }
-const ballMat = new THREE.MeshStandardMaterial({ color: 0xffbe55, roughness: 0.55 });
-const tailMat = new THREE.MeshStandardMaterial({ color: 0xffab3d, roughness: 0.55 });
-const legMat = new THREE.MeshStandardMaterial({ color: 0xd98a2b, roughness: 0.6 });
-const ghostMat = new THREE.MeshStandardMaterial({
-  color: 0x9fb6cc, transparent: true, opacity: 0.25, depthWrite: false
+const ballMat = new THREE.MeshToonMaterial({
+  map: makePencilTexture('#ffdc9e', '#9a5a20'), gradientMap: pencilGradient
+});
+const tailMat = new THREE.MeshToonMaterial({
+  map: makePencilTexture('#ffd09a', '#94511d'), gradientMap: pencilGradient
+});
+const legMat = new THREE.MeshToonMaterial({
+  map: makePencilTexture('#f6bd78', '#8a4b1d'), gradientMap: pencilGradient
+});
+const ghostMat = new THREE.MeshToonMaterial({
+  color: 0xa9c6de, transparent: true, opacity: 0.20, depthWrite: false,
+  gradientMap: pencilGradient
 });
 const unitSphere = new THREE.SphereGeometry(1, 32, 24);
 
@@ -418,7 +469,7 @@ function buildRig() {
 
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
   ballMesh.name = 'Ball';
-  addOutline(ballMesh, 1.045);
+  addOutline(ballMesh, 1.06);
   charGroup.add(ballMesh);
 
   tailJoints = []; tailRoot = null; legL = null; legR = null;
@@ -439,7 +490,7 @@ function buildRig() {
       const r = ballRadius * (0.34 - i * 0.035);
       seg.scale.setScalar(Math.max(r, 0.08));
       seg.position.x = segLen / 2;
-      addOutline(seg, 1.07);
+      addOutline(seg, 1.09);
       joint.add(seg);
       parent.add(joint);
       tailJoints.push(joint);
@@ -489,6 +540,7 @@ function buildRig() {
       const foot = new THREE.Mesh(unitSphere, legMat);
       foot.scale.set(0.24, 0.12, 0.16);
       foot.position.set(0.1, -legLen, 0);
+      addOutline(foot, 1.10);
       hip.add(cyl); hip.add(foot);
       charGroup.add(hip);
       return hip;
