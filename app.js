@@ -1532,4 +1532,4 @@ buildRig();
 layout();
 setFrame(FIRST_FRAME);
 renderer.setAnimationLoop(loop);
-say('Lesson bounce loaded. Press Play.');
+say('Empty scene. Move the ball, then press Set Key.');
