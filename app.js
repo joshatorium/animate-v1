@@ -327,6 +327,25 @@ function setView(mode) {
     b.classList.toggle('active', b.dataset.view === mode));
   applyCamera();
 }
+// F in a viewport: frame the picked object. The orbit center
+// moves to the object center, so Alt+drag turns around it.
+function frameViewport() {
+  if (!charGroup) { say('Nothing to frame yet.'); return; }
+  let center, label;
+  if (selectedCtrl !== 'ball' && tailCtrlJoints[selectedCtrl]) {
+    center = new THREE.Vector3();
+    tailCtrlJoints[selectedCtrl].getWorldPosition(center);
+    label = CHAN_LABEL[selectedCtrl];
+  } else {
+    center = charGroup.position.clone();   // the ball center
+    label = 'the ball';
+  }
+  orbitTarget.copy(center);
+  if (viewMode === 'persp') sph.radius = clamp(ballRadius * 5, 3.5, 40);
+  else flatDist = clamp(ballRadius * 7, 4, 40);
+  applyCamera();
+  say(`Camera framed on ${label}. Alt+drag now turns around it.`);
+}
 document.querySelectorAll('.view-btn').forEach((b) =>
   b.addEventListener('click', () => setView(b.dataset.view)));
 applyCamera();
@@ -833,6 +852,13 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'arrowdown') nudgeKeys(0, -step);
     return;
   }
+  if (k === 'f') {
+    // F frames: a picked key in the Graph Editor,
+    // or the picked object in a viewport.
+    e.preventDefault();
+    if (graphOpen) frameGeKey(); else frameViewport();
+    return;
+  }
   if (k === 'q') setTool('select');
   else if (k === 'w') setTool('move');
   else if (k === 'e') setTool('rotate');
@@ -1040,6 +1066,7 @@ let geSelKeys = [];         // [{chan, key}] all picked keys (click or drag box)
 let geMarquee = null;       // the live drag box {x0, y0, x1, y1, add}
 let geHandles = null;       // screen points of the active key's bezier handles
 let geDrag = null;
+let geView = null;          // zoomed view {f0, f1, v0, v1}; null = full auto view
 function keyIsPicked(key) { return geSelKeys.some((s) => s.key === key); }
 
 // The slope of a key on one side, as the curve math sees it:
@@ -1067,7 +1094,7 @@ function buildGeChannelList() {
   box.innerHTML = '';
   const hint = document.createElement('div');
   hint.className = 'ge-hint';
-  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves.';
+  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves. Wheel: zoom. F: frame a picked key. Double-click graph: full view.';
   box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
@@ -1120,13 +1147,16 @@ function geGeom() {
   if (!isFinite(lo)) { lo = -1; hi = 1; }
   if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
   const pad = (hi - lo) * 0.15; lo -= pad; hi += pad;
+  // A zoomed view (wheel or F key) replaces the auto range.
+  let f0 = FIRST_FRAME, f1 = LAST_FRAME, v0 = lo, v1 = hi;
+  if (geView) { f0 = geView.f0; f1 = geView.f1; v0 = geView.v0; v1 = geView.v1; }
   return {
     w, h, padL, padT,
-    x: (f) => padL + ((f - 1) / (LAST_FRAME - 1)) * (w - padL - padR),
-    y: (v) => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB),
-    frame: (px) => 1 + ((px - padL) / (w - padL - padR)) * (LAST_FRAME - 1),
-    value: (py) => lo + (1 - (py - padT) / (h - padT - padB)) * (hi - lo),
-    lo, hi
+    x: (f) => padL + ((f - f0) / (f1 - f0)) * (w - padL - padR),
+    y: (v) => padT + (1 - (v - v0) / (v1 - v0)) * (h - padT - padB),
+    frame: (px) => f0 + ((px - padL) / (w - padL - padR)) * (f1 - f0),
+    value: (py) => v0 + (1 - (py - padT) / (h - padT - padB)) * (v1 - v0),
+    lo: v0, hi: v1, f0, f1
   };
 }
 function sizeGeCanvas() {
@@ -1149,7 +1179,8 @@ function drawGraph() {
   gctx.stroke();
   // Grid.
   gctx.font = '11px sans-serif'; gctx.textAlign = 'center';
-  for (let f = FIRST_FRAME; f <= LAST_FRAME; f += 4) {
+  const fStep = (g.f1 - g.f0) > 24 ? 4 : (g.f1 - g.f0) > 10 ? 2 : 1;
+  for (let f = Math.max(FIRST_FRAME, Math.ceil(g.f0)); f <= Math.min(LAST_FRAME, g.f1); f += fStep) {
     const x = g.x(f);
     gctx.strokeStyle = '#dbe4f0';
     gctx.beginPath(); gctx.moveTo(x, g.padT); gctx.lineTo(x, h - 26); gctx.stroke();
@@ -1275,6 +1306,41 @@ function deletePickedKey() {
   livePose = evalAll(currentFrame);
   applyPose(); drawGraph(); geInfo(); drawRuler();
 }
+// Graph zoom: the wheel zooms at the mouse point, so the
+// frame and value under the cursor stay under the cursor.
+geCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const g = geGeom();
+  const rect = geCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const aF = g.frame(px), aV = g.value(py);
+  const zoom = e.deltaY < 0 ? 0.82 : 1.22;   // wheel up: zoom in
+  let fSpan = clamp((g.f1 - g.f0) * zoom, 3, Math.max(12, LAST_FRAME - 1));
+  let vSpan = clamp((g.hi - g.lo) * zoom, 0.25, 400);
+  const fx = (aF - g.f0) / (g.f1 - g.f0);
+  const fy = (aV - g.lo) / (g.hi - g.lo);
+  let f0 = aF - fx * fSpan;
+  f0 = clamp(f0, FIRST_FRAME - fSpan * 0.25, LAST_FRAME - fSpan * 0.75);
+  geView = { f0, f1: f0 + fSpan, v0: aV - fy * vSpan, v1: aV - fy * vSpan + vSpan };
+  drawGraph();
+}, { passive: false });
+geCanvas.addEventListener('dblclick', () => { geView = null; drawGraph(); });
+
+// F in the Graph Editor: frame the picked key.
+// With no key picked, F frames the full curves again.
+function frameGeKey() {
+  const target = geSelectedKey || (geSelKeys.length ? geSelKeys[0].key : null);
+  if (!target) { geView = null; drawGraph(); return; }
+  const g = geGeom();
+  const fSpan = clamp((LAST_FRAME - 1) * 0.3, 8, 20);
+  const vSpan = Math.max(1.2, (g.hi - g.lo) * 0.28);
+  geView = {
+    f0: target.frame - fSpan / 2, f1: target.frame + fSpan / 2,
+    v0: target.value - vSpan / 2, v1: target.value + vSpan / 2
+  };
+  drawGraph();
+}
+
 function openGraph() {
   graphOpen = true;
   $('graphOverlay').classList.remove('hidden');
