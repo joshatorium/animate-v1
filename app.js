@@ -478,6 +478,7 @@ const legMat = sketchMat;
 const ghostMat = new THREE.MeshBasicMaterial({
   color: 0xb7c9da, transparent: true, opacity: 0.18, depthWrite: false
 });
+const seamMat = new THREE.MeshBasicMaterial({ color: 0xd92b2b });
 
 // Scribble cast shadow: a flat patch of horizontal pencil
 // strokes on the floor, like the shadow in the sketch.
@@ -541,6 +542,15 @@ function buildRig() {
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
   ballMesh.name = 'Ball';
   addOutline(ballMesh, 1.04);
+  // Red center line around the ball, so rotation reads at a
+  // glance. One tick dot on the line shows spin along the
+  // line too. Both ride on the ball, squash and all.
+  const seam = new THREE.Mesh(new THREE.TorusGeometry(1.005, 0.022, 10, 72), seamMat);
+  seam.name = 'CenterLine';
+  ballMesh.add(seam);
+  const tick = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), seamMat);
+  tick.position.set(1.005, 0, 0);
+  ballMesh.add(tick);
   charGroup.add(ballMesh);
 
   tailJoints = []; tailRoot = null; legL = null; legR = null;
