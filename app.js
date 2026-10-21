@@ -242,7 +242,11 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
-const grid = new THREE.GridHelper(24, 24, 0xa9c6e8, 0xd7e3f0);   // pencil-blue floor grid
+// Floor grid in paper tones: faint pencil lines, close to the paper
+// color, so the floor reads as part of the sheet in every view.
+const grid = new THREE.GridHelper(24, 24, 0xc9d6e8, 0xe8eef5);
+grid.material.transparent = true;
+grid.material.opacity = 0.6;
 scene.add(grid);
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(24, 24),
