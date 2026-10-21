@@ -229,11 +229,12 @@ channels = emptyChannels();
 // ---------- Three.js scene ----------
 const host = $('canvasHost');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x101114);
+// No scene background: the notebook paper CSS shows through.
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 camera.position.set(5.5, 3.6, 8.5);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+renderer.setClearColor(0x000000, 0);   // clear = see-through, so the paper shows
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 host.appendChild(renderer.domElement);
 
@@ -241,7 +242,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
-const grid = new THREE.GridHelper(24, 24, 0x3d434e, 0x2a2e36);
+const grid = new THREE.GridHelper(24, 24, 0xa9c6e8, 0xd7e3f0);   // pencil-blue floor grid
 scene.add(grid);
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(24, 24),
@@ -349,6 +350,15 @@ let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostA = null, ghostB = null;
 let ballRadius = 0.9, legClear = 0;
 
+// Ink outline: a slightly larger shell worn inside-out.
+// It makes the ball and tail read as drawn, not rendered.
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x2e3d5c, side: THREE.BackSide });
+function addOutline(mesh, grow) {
+  const ol = new THREE.Mesh(unitSphere, outlineMat);
+  ol.scale.setScalar(grow);
+  mesh.add(ol);
+  return ol;
+}
 const ballMat = new THREE.MeshStandardMaterial({ color: 0xffbe55, roughness: 0.55 });
 const tailMat = new THREE.MeshStandardMaterial({ color: 0xffab3d, roughness: 0.55 });
 const legMat = new THREE.MeshStandardMaterial({ color: 0xd98a2b, roughness: 0.6 });
@@ -371,6 +381,7 @@ function buildRig() {
 
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
   ballMesh.name = 'Ball';
+  addOutline(ballMesh, 1.045);
   charGroup.add(ballMesh);
 
   tailJoints = []; tailRoot = null; legL = null; legR = null;
@@ -391,6 +402,7 @@ function buildRig() {
       const r = ballRadius * (0.34 - i * 0.035);
       seg.scale.setScalar(Math.max(r, 0.08));
       seg.position.x = segLen / 2;
+      addOutline(seg, 1.07);
       joint.add(seg);
       parent.add(joint);
       tailJoints.push(joint);
@@ -419,6 +431,12 @@ function buildRig() {
       ring.rotation.y = Math.PI / 2;   // the ring stands around the tail
       ring.userData.ctrl = name;
       joint.add(ring);
+      // A loose second ring: the sketched double-stroke look.
+      const twin = new THREE.Mesh(ring.geometry, ring.material);
+      twin.rotation.set(0.07, Math.PI / 2, 0);
+      twin.scale.setScalar(1.12);
+      twin.position.x = 0.02;
+      joint.add(twin);
       tailCtrlMeshes.push(ring);
     }
   }
@@ -711,17 +729,17 @@ function drawRuler() {
   if (!ruler.clientWidth) return;
   const { w, h, frameX } = rulerGeom();
   rctx.clearRect(0, 0, w, h);
-  rctx.fillStyle = '#26292f';
+  rctx.fillStyle = '#fffdf2';
   rctx.fillRect(0, 0, w, h);
-  rctx.strokeStyle = '#454b56';
+  rctx.strokeStyle = '#b9ac8d';
   rctx.strokeRect(0.5, 0.5, w - 1, 34);
   rctx.font = '11px sans-serif';
   rctx.textAlign = 'center';
   for (let f = FIRST_FRAME; f <= LAST_FRAME; f++) {
     const x = frameX(f);
-    rctx.strokeStyle = '#565e6a';
+    rctx.strokeStyle = '#8fa0bb';
     rctx.beginPath(); rctx.moveTo(x, 24); rctx.lineTo(x, 33); rctx.stroke();
-    if ((f - 1) % 4 === 0) { rctx.fillStyle = '#aab2be'; rctx.fillText(String(f), x, 14); }
+    if ((f - 1) % 4 === 0) { rctx.fillStyle = '#5a6c8a'; rctx.fillText(String(f), x, 14); }
   }
   // Key diamonds.
   rctx.fillStyle = '#ffb042';
@@ -733,10 +751,10 @@ function drawRuler() {
   }
   // Playhead.
   const px = frameX(currentFrame);
-  rctx.strokeStyle = '#ffb042'; rctx.lineWidth = 2;
+  rctx.strokeStyle = '#d3546b'; rctx.lineWidth = 2;
   rctx.beginPath(); rctx.moveTo(px, 0); rctx.lineTo(px, h); rctx.stroke();
   rctx.lineWidth = 1;
-  rctx.fillStyle = '#ffb042';
+  rctx.fillStyle = '#d3546b';
   rctx.beginPath(); rctx.moveTo(px - 6, 0); rctx.lineTo(px + 6, 0); rctx.lineTo(px, 9);
   rctx.closePath(); rctx.fill();
 }
@@ -982,26 +1000,31 @@ function drawGraph() {
   const g = geGeom();
   const { w, h } = g;
   gctx.clearRect(0, 0, w, h);
-  gctx.fillStyle = '#101114'; gctx.fillRect(0, 0, w, h);
+  gctx.fillStyle = '#fffef7'; gctx.fillRect(0, 0, w, h);
+  // Faint ruled paper lines behind the curves.
+  gctx.strokeStyle = 'rgba(120, 165, 220, 0.35)';
+  gctx.beginPath();
+  for (let y = 18; y < h; y += 26) { gctx.moveTo(0, y); gctx.lineTo(w, y); }
+  gctx.stroke();
   // Grid.
   gctx.font = '11px sans-serif'; gctx.textAlign = 'center';
   for (let f = FIRST_FRAME; f <= LAST_FRAME; f += 4) {
     const x = g.x(f);
-    gctx.strokeStyle = '#2c3038';
+    gctx.strokeStyle = '#dbe4f0';
     gctx.beginPath(); gctx.moveTo(x, g.padT); gctx.lineTo(x, h - 26); gctx.stroke();
-    gctx.fillStyle = '#aab2be'; gctx.fillText(String(f), x, h - 8);
+    gctx.fillStyle = '#5a6c8a'; gctx.fillText(String(f), x, h - 8);
   }
   for (let i = 0; i <= 4; i++) {
     const v = g.lo + ((g.hi - g.lo) * i) / 4;
     const y = g.y(v);
-    gctx.strokeStyle = '#2c3038';
+    gctx.strokeStyle = '#dbe4f0';
     gctx.beginPath(); gctx.moveTo(g.padL, y); gctx.lineTo(w - 14, y); gctx.stroke();
-    gctx.fillStyle = '#aab2be'; gctx.textAlign = 'right';
+    gctx.fillStyle = '#5a6c8a'; gctx.textAlign = 'right';
     gctx.fillText(fmt(v), g.padL - 6, y + 4);
     gctx.textAlign = 'center';
   }
   if (g.lo < 0 && g.hi > 0) {
-    gctx.strokeStyle = '#454b56';
+    gctx.strokeStyle = '#3c4a63';
     gctx.beginPath(); gctx.moveTo(g.padL, g.y(0)); gctx.lineTo(w - 14, g.y(0)); gctx.stroke();
   }
   // Curves. Picked channels are bright. The rest are faint.
@@ -1046,7 +1069,7 @@ function drawGraph() {
     gctx.beginPath(); gctx.moveTo(inPt.x, inPt.y); gctx.lineTo(kx, ky); gctx.lineTo(outPt.x, outPt.y); gctx.stroke();
     gctx.lineWidth = 1;
     for (const p of [inPt, outPt]) {
-      gctx.fillStyle = '#101114';
+      gctx.fillStyle = '#fffef7';
       gctx.fillRect(p.x - 6, p.y - 6, 12, 12);
       gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 2;
       gctx.strokeRect(p.x - 6, p.y - 6, 12, 12);
@@ -1366,6 +1389,9 @@ async function playblast() {
   renderer.setSize(1280, 720, false);
   camera.aspect = 1280 / 720; camera.updateProjectionMatrix();
   tc.visible = false; tc.enabled = false;
+  // The movie holds flat paper color. The ruled lines are screen-only:
+  // canvas capture cannot see CSS, so the lines stay out of the movie.
+  scene.background = new THREE.Color(0xfffef7);
   updateGhosts(); // ghosts hide while playblastActive is true
 
   $('pbBox').classList.remove('hidden');
@@ -1396,6 +1422,7 @@ async function playblast() {
     // Restore the normal view.
     renderer.setSize(hostW, hostH, false);
     camera.aspect = hostW / hostH; camera.updateProjectionMatrix();
+    scene.background = null;
     tc.visible = true; tc.enabled = true;
     playblastActive = false;
     $('pbBox').classList.add('hidden');

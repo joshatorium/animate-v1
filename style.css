@@ -208,3 +208,102 @@ a.btn { text-decoration: none; display: inline-block; }
 .pb-track { height: 14px; background: #181a1e; border-radius: 7px; margin: 14px 0; overflow: hidden; }
 #pbFill { height: 100%; width: 0%; background: #2f9e63; transition: width .1s linear; }
 .done-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+
+/* ===== THEME A — Notebook (picked by the user 2026-10-21) =====
+   School paper, ink lines, hand type. The paper is CSS gradients:
+   no image files, so the app stays fast. */
+body {
+  font-family: "Patrick Hand", "Segoe UI", system-ui, sans-serif;
+  background: #ece5cf; color: #2e3d5c; letter-spacing: .2px;
+}
+.btn {
+  background: #fdf6da; color: #2e3d5c; border: 2px solid #3c4a63; border-radius: 10px;
+}
+.btn:hover { background: #ffedb5; }
+.btn.blue { background: #d8e9fb; border-color: #3c4a63; }
+.btn.blue:hover { background: #c2dcfa; }
+.btn.green { background: #57a773; border-color: #3c4a63; color: #ffffff; }
+.btn.green:hover { background: #4c9264; }
+.btn.red { background: #f3c1c1; border-color: #3c4a63; color: #2e3d5c; }
+.btn.red:hover { background: #edaeae; }
+
+#topbar { background: #fffdf2; border-bottom: 2px solid #3c4a63; }
+.title { font-family: "Caveat", cursive; font-size: 36px; font-weight: 700; color: #d3546b; letter-spacing: 0; }
+.title-sub { color: #71809c; font-size: 16px; font-weight: 400; }
+.lesson-pick { background: #fff3b0; color: #2e3d5c; border: 2px solid #3c4a63; }
+
+#toolrail { background: #fffdf2; border-right: 2px solid #3c4a63; }
+.rail-title { color: #71809c; }
+.tool-btn { background: #fdf6da; color: #2e3d5c; border: 2px solid #3c4a63; font-size: 15px; }
+.tool-btn b { color: #71809c; }
+.tool-btn:hover { background: #ffedb5; }
+.tool-btn.active { background: #ffe9a8; border-color: #3c4a63; color: #2e3d5c; }
+.tool-btn.active b { color: #d3546b; }
+.tool-btn.on { background: #d8e9fb; border-color: #3c4a63; }
+.rail-hint { color: #71809c; border-color: #b9ac8d; }
+#btnSetKey.autokey-on { background: #d3546b; border-color: #3c4a63; color: #ffffff; }
+.autokey-tag { color: #d33f49; }
+
+#viewWrap {
+  background-color: #fffef7;
+  background-image:
+    linear-gradient(90deg, transparent 0, transparent 44px, rgba(232, 138, 138, .75) 44px, rgba(232, 138, 138, .75) 46px, transparent 46px),
+    repeating-linear-gradient(180deg, transparent 0, transparent 25px, rgba(120, 165, 220, .45) 25px, rgba(120, 165, 220, .45) 26px);
+}
+#viewLabel {
+  background: #fff3b0; color: #2e3d5c; border: 2px solid #3c4a63; border-radius: 6px;
+  padding: 5px 12px; font-size: 17px; transform: rotate(-1.2deg);
+  box-shadow: 2px 3px 0 rgba(60, 74, 99, .25);
+}
+#viewHint { color: #5a6c8a; }
+.view-btn { background: #fdf6da; color: #2e3d5c; border: 2px solid #3c4a63; }
+.view-btn:hover { background: #ffedb5; }
+.view-btn.active { background: #ffe9a8; color: #2e3d5c; border-color: #3c4a63; }
+.note { background: #d8e9fb; border: 2px solid #3c4a63; color: #2e3d5c; }
+
+#rightPanel { background: #ece5cf; border-left: none; }
+.panel { background: #fffdf2; border: 2px solid #3c4a63; border-radius: 12px; }
+.panel-title { font-family: "Caveat", cursive; font-size: 25px; color: #2e3d5c; }
+.panel-subtitle { color: #71809c; }
+.tpl-btn { background: #fdf6da; color: #2e3d5c; border: 2px solid #3c4a63; }
+.tpl-btn:hover { background: #ffedb5; }
+.tpl-btn.active { background: #ffe9a8; border-color: #3c4a63; }
+.slider-row input[type="range"] { accent-color: #d3546b; }
+.set-label { color: #71809c; }
+.chan-input { background: #ffffff; color: #2e3d5c; border: 2px solid #3c4a63; }
+.chan-input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+
+#timelineBar { background: #fffdf2; border-top: 2px solid #3c4a63; }
+.tl-title { font-family: "Caveat", cursive; font-size: 25px; }
+.status-msg { color: #d3546b; }
+.speed-label { color: #71809c; }
+.tl-small { color: #71809c; }
+.frames-box { color: #2e3d5c; }
+.frames-box input { background: #ffffff; color: #2e3d5c; border: 2px solid #3c4a63; }
+.frames-box input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+
+#graphOverlay { background: rgba(62, 52, 30, .55); }
+#graphWindow { background: #fffdf2; border: 2px solid #3c4a63; }
+.ge-title { font-family: "Caveat", cursive; font-size: 26px; }
+.ge-label { color: #71809c; }
+#geChannels { background: #fffef7; border: 2px solid #3c4a63; }
+.ge-chan { color: #2e3d5c; }
+.ge-chan:hover { background: #fdf6da; }
+.ge-chan.active { background: #ffe9a8; border-color: #3c4a63; }
+.ge-group-name { color: #d3546b; }
+.ge-hint { color: #71809c; }
+#geCanvas { background: #fffef7; border: 2px solid #3c4a63; }
+.ge-foot { color: #2e3d5c; }
+.ge-edit label { color: #71809c; }
+.ge-edit input { background: #ffffff; color: #2e3d5c; border: 2px solid #3c4a63; }
+.ge-edit input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+.ge-shift-label { color: #d3546b; }
+.ge-shift input { background: #ffffff; color: #2e3d5c; border: 2px solid #3c4a63; }
+.ge-shift input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+.tan-btn.active { background: #ffe9a8; border-color: #3c4a63; color: #2e3d5c; }
+
+.modal { background: rgba(62, 52, 30, .55); }
+.modal-card { background: #fffdf2; border: 2px solid #3c4a63; color: #2e3d5c; }
+.modal-title { font-family: "Caveat", cursive; font-size: 27px; }
+.pb-track { background: #e7dfc8; }
+#pbFill { background: #57a773; }
