@@ -249,31 +249,35 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
-// The floor is a sheet of lined paper lying on the ground.
-// Its face is a drawn texture: paper color, blue ruled lines,
-// a red margin line, and an ink edge. In Perspective it reads as
-// a real sheet. In Front and Side it reads as the sheet edge.
-// In Top it reads as the full page.
+// The floor is grid paper with no end: one small graph-paper tile,
+// repeated across a very wide plane, so the paper runs to the
+// horizon in every view and no plane edge can ever show.
 function makePaperTexture() {
   const c = document.createElement('canvas');
-  c.width = 1024; c.height = 768;
+  c.width = 512; c.height = 512;
   const x = c.getContext('2d');
   x.fillStyle = '#fffef7'; x.fillRect(0, 0, c.width, c.height);
-  x.strokeStyle = 'rgba(120, 165, 220, 0.55)'; x.lineWidth = 2;
-  for (let y = 36; y < c.height; y += 32) {
-    x.beginPath(); x.moveTo(0, y); x.lineTo(c.width, y); x.stroke();
+  // Fine grid: a line every 32 px.
+  x.strokeStyle = 'rgba(120, 165, 220, 0.5)'; x.lineWidth = 2;
+  for (let p = 0; p <= c.width; p += 32) {
+    x.beginPath(); x.moveTo(p, 0); x.lineTo(p, c.height); x.stroke();
+    x.beginPath(); x.moveTo(0, p); x.lineTo(c.width, p); x.stroke();
   }
-  x.strokeStyle = 'rgba(232, 138, 138, 0.85)'; x.lineWidth = 3;
-  x.beginPath(); x.moveTo(72, 0); x.lineTo(72, c.height); x.stroke();
-  x.strokeStyle = 'rgba(60, 74, 99, 0.55)'; x.lineWidth = 7;
-  x.strokeRect(16, 16, c.width - 32, c.height - 32);
+  // Bold grid: a stronger line every 5 cells, like real graph paper.
+  x.strokeStyle = 'rgba(90, 140, 205, 0.65)'; x.lineWidth = 3;
+  for (let p = 0; p <= c.width; p += 160) {
+    x.beginPath(); x.moveTo(p, 0); x.lineTo(p, c.height); x.stroke();
+    x.beginPath(); x.moveTo(0, p); x.lineTo(c.width, p); x.stroke();
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(75, 75);   // one tile = 4 world units
+  tex.anisotropy = 8;
   return tex;
 }
 const floorSheet = new THREE.Mesh(
-  new THREE.PlaneGeometry(30, 22),
+  new THREE.PlaneGeometry(300, 300),
   new THREE.MeshBasicMaterial({ map: makePaperTexture() })
 );
 floorSheet.rotation.x = -Math.PI / 2;
