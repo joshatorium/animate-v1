@@ -1567,7 +1567,11 @@ new ResizeObserver(layout).observe(host);
 window.addEventListener('resize', layout);
 
 // ---------- Start ----------
-buildRig();
+// More debug switches: ?tc=off hides the tool gizmo,
+// ?rig=off skips the character rig (and the gizmo with it).
+if (DEBUG_Q.get('tc') === 'off') { tc.visible = false; tc.enabled = false; }
+if (DEBUG_Q.get('rig') === 'off') { tc.visible = false; tc.enabled = false; }
+else buildRig();
 layout();
 setFrame(FIRST_FRAME);
 renderer.setAnimationLoop(loop);
