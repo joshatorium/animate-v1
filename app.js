@@ -284,12 +284,9 @@ floorSheet.rotation.x = -Math.PI / 2;
 floorSheet.position.y = -0.001;
 if (DEBUG_Q.get('floor') === 'off') floorSheet.visible = false;
 scene.add(floorSheet);
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(24, 24),
-  new THREE.MeshStandardMaterial({ color: 0x17181c })
-);
-ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01;
-scene.add(ground);
+// (The old dark ground plane from the first build is gone.
+// It hid under the paper sheet and showed as a black band
+// in the flat views and around the sheet edges.)
 
 // ---------- Camera: simple custom orbit (Alt + drag) ----------
 // We do not use OrbitControls. TransformControls owns plain drags.
