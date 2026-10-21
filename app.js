@@ -242,12 +242,36 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
-// Floor grid in paper tones: faint pencil lines, close to the paper
-// color, so the floor reads as part of the sheet in every view.
-const grid = new THREE.GridHelper(24, 24, 0xc9d6e8, 0xe8eef5);
-grid.material.transparent = true;
-grid.material.opacity = 0.6;
-scene.add(grid);
+// The floor is a sheet of lined paper lying on the ground.
+// Its face is a drawn texture: paper color, blue ruled lines,
+// a red margin line, and an ink edge. In Perspective it reads as
+// a real sheet. In Front and Side it reads as the sheet edge.
+// In Top it reads as the full page.
+function makePaperTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 768;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fffef7'; x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = 'rgba(120, 165, 220, 0.55)'; x.lineWidth = 2;
+  for (let y = 44; y < c.height; y += 44) {
+    x.beginPath(); x.moveTo(0, y); x.lineTo(c.width, y); x.stroke();
+  }
+  x.strokeStyle = 'rgba(232, 138, 138, 0.85)'; x.lineWidth = 3;
+  x.beginPath(); x.moveTo(72, 0); x.lineTo(72, c.height); x.stroke();
+  x.strokeStyle = '#3c4a63'; x.lineWidth = 10;
+  x.strokeRect(5, 5, c.width - 10, c.height - 10);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+const floorSheet = new THREE.Mesh(
+  new THREE.PlaneGeometry(16, 12),
+  new THREE.MeshBasicMaterial({ map: makePaperTexture() })
+);
+floorSheet.rotation.x = -Math.PI / 2;
+floorSheet.position.y = -0.001;
+scene.add(floorSheet);
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(24, 24),
   new THREE.MeshStandardMaterial({ color: 0x17181c })
