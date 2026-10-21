@@ -307,3 +307,28 @@ body {
 .modal-title { font-family: "Caveat", cursive; font-size: 27px; }
 .pb-track { background: #e7dfc8; }
 #pbFill { background: #57a773; }
+
+/* Tutorial walkthrough: a paper card that guides without blocking. */
+#tutorialCard {
+  position: fixed; left: 92px; bottom: 126px; z-index: 60;
+  width: min(360px, calc(100vw - 112px));
+  background: #fffdf2; color: #2e3d5c;
+  border: 2px solid #3c4a63; border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(46, 61, 92, .22);
+  padding: 12px 14px;
+}
+.tut-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+#tutStep { color: #d3546b; font-weight: 800; font-size: 13px; letter-spacing: .04em; }
+#tutTitle { font-family: "Caveat", cursive; font-size: 29px; line-height: 1; margin-top: 4px; }
+#tutorialCard p { margin: 7px 0 0; line-height: 1.35; }
+#tutTask { font-weight: 800; }
+#tutCheck { color: #57a773; font-weight: 800; min-height: 20px; }
+.tut-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 10px; }
+.coach-target {
+  outline: 4px solid #d3546b !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(255, 233, 168, .8) !important;
+}
+@media (max-width: 760px) {
+  #tutorialCard { left: 10px; bottom: 112px; width: calc(100vw - 20px); }
+}

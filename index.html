@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -27,6 +27,7 @@
     <div class="top-group">
       <button id="btnOpen" class="btn">Open</button>
       <button id="btnSave" class="btn">Save</button>
+      <button id="btnTutorial" class="btn green">Tutorial</button>
     </div>
     <div class="top-group top-right">
       <button id="btnGetMaya" class="btn blue">Get from Maya</button>
@@ -134,6 +135,23 @@
   </footer>
 </div>
 
+<!-- ===== Tutorial walkthrough card ===== -->
+<div id="tutorialCard" class="hidden" aria-live="polite">
+  <div class="tut-head">
+    <span id="tutStep">Step 1 of 11</span>
+    <button id="tutExit" class="btn small red">Exit</button>
+  </div>
+  <div id="tutTitle">Welcome</div>
+  <p id="tutText"></p>
+  <p id="tutTask"></p>
+  <p id="tutCheck"></p>
+  <div class="tut-actions">
+    <button id="tutBack" class="btn small">Back</button>
+    <button id="tutAction" class="btn small blue hidden">Help me</button>
+    <button id="tutNext" class="btn small green">Next</button>
+  </div>
+</div>
+
 <!-- ===== Graph Editor window (separate panel) ===== -->
 <div id="graphOverlay" class="hidden">
   <div id="graphWindow">
@@ -197,6 +215,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>

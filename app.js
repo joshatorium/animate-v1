@@ -1537,6 +1537,226 @@ $('btnSendMaya').addEventListener('click', () => {
     { binary: true });
 });
 
+// ---------- Tutorial walkthrough ----------
+// A paper card guides a new user through one small task at a time.
+// The card does not block the app. The user does the real work.
+// Red outlines show where to look. A green Done line shows progress.
+let tutIndex = -1;
+let tutTimer = null;
+let tutTargetEl = null;
+const tutFlags = { sawFront: false, sawSide: false, played: false, saved: false };
+const TUT_SEEN_KEY = 'animate.tutorial.seen.v1';
+function tutSeen() {
+  try { return localStorage.getItem(TUT_SEEN_KEY) === 'yes'; } catch { return true; }
+}
+function markTutSeen() {
+  try { localStorage.setItem(TUT_SEEN_KEY, 'yes'); } catch { /* private mode: skip */ }
+}
+function hasKey(name, frame) {
+  return channels[name].some((k) => k.frame === frame);
+}
+function anyTailKey() {
+  return TAIL_CHANNELS.some((name) => channels[name].length > 0);
+}
+const TUT_STEPS = [
+  {
+    title: 'Welcome to ANIMATE!',
+    text: 'We will make a bouncing ball. Each step has one small job.',
+    task: 'Press Next when you are ready.',
+    target: null
+  },
+  {
+    title: 'Pick the Ball rig',
+    text: 'The Rig panel picks the character. Lesson 1 uses the plain ball.',
+    task: 'Click 1 Ball. Then click BUILD RIG.',
+    target: '#rigPanel',
+    done: () => template === 1,
+    actionLabel: 'Help me',
+    action: () => {
+      if (template !== 1) pushHistory('Change rig');
+      setTemplate(1);
+      buildRig();
+      say('Ball rig ready.');
+    }
+  },
+  {
+    title: 'Look around',
+    text: 'Views help you judge a pose. Front and Side are flat views.',
+    task: 'Click Front. Click Side. Click Perspective.',
+    target: '#viewBtns',
+    done: () => tutFlags.sawFront && tutFlags.sawSide && viewMode === 'persp'
+  },
+  {
+    title: 'Pick the Move tool',
+    text: 'Move changes place. Rotate turns. Scale changes size.',
+    task: 'Press W, or click Move in the Tools rail.',
+    target: '.tool-btn[data-tool="move"]',
+    done: () => activeTool === 'move'
+  },
+  {
+    title: 'Make the first pose',
+    text: 'A pose is the ball position at one frame. Start high.',
+    task: 'Go to frame 1. Drag the ball up.',
+    target: '#viewWrap',
+    done: () => currentFrame === 1 && Math.abs(livePose.moveY) > 0.05,
+    actionLabel: 'Show me',
+    action: () => {
+      setFrame(1);
+      livePose.moveY = 1.6;
+      applyPose();
+      updateSettings();
+    }
+  },
+  {
+    title: 'Set the first key',
+    text: 'A key saves the pose at this frame.',
+    task: 'Press S, or click Set Key.',
+    target: '#btnSetKey',
+    done: () => hasKey('moveY', 1)
+  },
+  {
+    title: 'Make the hit pose',
+    text: 'The low pose is the contact pose. The ball hits the floor here.',
+    task: 'Click frame 13 on the ruler. Drag the ball down to the floor.',
+    target: '#ruler',
+    done: () => currentFrame === 13,
+    actionLabel: 'Go to frame 13',
+    action: () => { setFrame(13); livePose.moveY = 0; applyPose(); updateSettings(); }
+  },
+  {
+    title: 'Set the hit key',
+    text: 'Save the contact pose before you move on.',
+    task: 'Press S, or click Set Key.',
+    target: '#btnSetKey',
+    done: () => hasKey('moveY', 13)
+  },
+  {
+    title: 'Make the end pose',
+    text: 'Give the ball a clear end pose. Up and to the side reads well.',
+    task: 'Click frame 24 on the ruler. Drag the ball up and to the side.',
+    target: '#ruler',
+    done: () => currentFrame === 24,
+    actionLabel: 'Show me',
+    action: () => {
+      setFrame(24);
+      livePose.moveY = 1.1;
+      livePose.moveX = 1.0;
+      applyPose();
+      updateSettings();
+    }
+  },
+  {
+    title: 'Set the end key and play',
+    text: 'The app fills the frames between keys. That fill is the motion.',
+    task: 'Press S. Then press Play.',
+    target: '#btnPlay',
+    done: () => hasKey('moveY', 24) && (playing || tutFlags.played)
+  },
+  {
+    title: 'Save the work',
+    text: 'Save early. Open brings the work back later.',
+    task: 'Click Save at the top. Then press Next.',
+    target: '#btnSave',
+    done: () => tutFlags.saved
+  },
+  {
+    title: 'Next rig: Ball + Tail',
+    text: 'The tail adds overlap. The tail follows the ball a beat late.',
+    task: 'Click 2 Ball + Tail. Then click BUILD RIG.',
+    target: '#rigPanel',
+    done: () => template === 2,
+    actionLabel: 'Help me',
+    action: () => {
+      if (template !== 2) pushHistory('Change rig');
+      setTemplate(2);
+      buildRig();
+      say('Ball + Tail rig ready.');
+    }
+  },
+  {
+    title: 'Pose the tail',
+    text: 'Tail rings are controllers. Tail 1 is cyan. Tail 2 is pink. Tail 3 is yellow.',
+    task: 'Click the cyan ring. Drag the round arrows. Press S to set a key.',
+    target: '#viewWrap',
+    done: () => anyTailKey(),
+    actionLabel: 'Pick Tail 1',
+    action: () => selectControl('tail1')
+  },
+  {
+    title: 'Open the Graph Editor',
+    text: 'The Graph Editor shows value over time. Move Y shows height over time.',
+    task: 'Click OPEN GRAPH EDITOR. Click Move Y in the list.',
+    target: '#btnGraph',
+    done: () => graphOpen && geChannel === 'moveY'
+  },
+  {
+    title: 'Touch one key',
+    text: 'A steep line means fast motion. A flat line means slow motion.',
+    task: 'Click one key dot. Drag it a little. Try Auto or Flat.',
+    target: '#geCanvas',
+    done: () => !!geSelectedKey || geSelKeys.length > 0
+  },
+  {
+    title: 'You know the loop',
+    text: 'Pose. Key. Play. Fix. Save. That loop makes animation.',
+    task: 'Close the Graph Editor. Save, or click PLAYBLAST to make a movie.',
+    target: '#btnPlayblast'
+  }
+];
+function setTutTarget(selector) {
+  if (tutTargetEl) tutTargetEl.classList.remove('coach-target');
+  tutTargetEl = selector ? document.querySelector(selector) : null;
+  if (tutTargetEl) tutTargetEl.classList.add('coach-target');
+}
+function updateTutCheck() {
+  if (tutIndex < 0) return;
+  if (viewMode === 'front') tutFlags.sawFront = true;
+  if (viewMode === 'side') tutFlags.sawSide = true;
+  if (playing) tutFlags.played = true;
+  const step = TUT_STEPS[tutIndex];
+  const done = step.done ? step.done() : false;
+  $('tutCheck').textContent = done ? 'Done. Press Next.' : '';
+}
+function showTutStep(i) {
+  tutIndex = clamp(i, 0, TUT_STEPS.length - 1);
+  const step = TUT_STEPS[tutIndex];
+  $('tutorialCard').classList.remove('hidden');
+  $('tutStep').textContent = `Step ${tutIndex + 1} of ${TUT_STEPS.length}`;
+  $('tutTitle').textContent = step.title;
+  $('tutText').textContent = step.text;
+  $('tutTask').textContent = step.task;
+  $('tutBack').disabled = tutIndex === 0;
+  $('tutNext').textContent = tutIndex === TUT_STEPS.length - 1 ? 'Finish' : 'Next';
+  $('tutAction').classList.toggle('hidden', !step.action);
+  if (step.action) $('tutAction').textContent = step.actionLabel || 'Help me';
+  setTutTarget(step.target);
+  updateTutCheck();
+  if (!tutTimer) tutTimer = setInterval(updateTutCheck, 400);
+}
+function closeTutorial() {
+  tutIndex = -1;
+  setTutTarget(null);
+  $('tutorialCard').classList.add('hidden');
+  if (tutTimer) { clearInterval(tutTimer); tutTimer = null; }
+  markTutSeen();
+}
+function openTutorial(startAt = 0) {
+  markTutSeen();
+  showTutStep(startAt);
+}
+$('btnTutorial').addEventListener('click', () => openTutorial(0));
+$('tutExit').addEventListener('click', closeTutorial);
+$('tutBack').addEventListener('click', () => showTutStep(tutIndex - 1));
+$('tutNext').addEventListener('click', () => {
+  if (tutIndex >= TUT_STEPS.length - 1) closeTutorial();
+  else showTutStep(tutIndex + 1);
+});
+$('tutAction').addEventListener('click', () => {
+  const step = TUT_STEPS[tutIndex];
+  if (step && step.action) { step.action(); updateTutCheck(); }
+});
+$('btnSave').addEventListener('click', () => { tutFlags.saved = true; });
+
 // ---------- Main loop and resize ----------
 const clock = new THREE.Clock();
 function loop() {
@@ -1573,3 +1793,4 @@ layout();
 setFrame(FIRST_FRAME);
 renderer.setAnimationLoop(loop);
 say('Empty scene. Move the ball, then press Set Key.');
+if (!tutSeen()) openTutorial(0);
