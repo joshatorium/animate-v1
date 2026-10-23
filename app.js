@@ -1547,8 +1547,60 @@ function frameGeKey() {
   drawGraph();
 }
 
+// The Graph Editor window floats. Drag its head to move it.
+// Drag the corner grip to resize it. The app stays live
+// behind it: the overlay lets every click through.
+const geWin = $('graphWindow');
+function placeGraphWindow() {
+  if (geWin.dataset.placed) return;
+  geWin.dataset.placed = '1';
+  geWin.style.left = '48px';
+  geWin.style.top = '44px';
+  geWin.style.width = Math.min(980, Math.max(430, window.innerWidth - 80)) + 'px';
+  geWin.style.height = Math.min(600, Math.max(300, window.innerHeight - 110)) + 'px';
+}
+const geHead = document.querySelector('.ge-head');
+let geWinDrag = null;
+geHead.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button, input, label, select, a')) return;   // head controls stay clickable
+  const r = geWin.getBoundingClientRect();
+  geWinDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+  geHead.setPointerCapture(e.pointerId);
+});
+geHead.addEventListener('pointermove', (e) => {
+  if (!geWinDrag) return;
+  const r = geWin.getBoundingClientRect();
+  const left = clamp(e.clientX - geWinDrag.dx, -r.width + 140, window.innerWidth - 90);
+  const top = clamp(e.clientY - geWinDrag.dy, 0, window.innerHeight - 46);
+  geWin.style.left = left + 'px';
+  geWin.style.top = top + 'px';
+});
+const endGeWinDrag = () => { geWinDrag = null; };
+geHead.addEventListener('pointerup', endGeWinDrag);
+geHead.addEventListener('pointercancel', endGeWinDrag);
+let geWinResize = null;
+$('geResize').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const r = geWin.getBoundingClientRect();
+  geWinResize = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+  $('geResize').setPointerCapture(e.pointerId);
+});
+$('geResize').addEventListener('pointermove', (e) => {
+  if (!geWinResize) return;
+  const w = clamp(geWinResize.w + (e.clientX - geWinResize.x), 430, window.innerWidth - 12);
+  const h = clamp(geWinResize.h + (e.clientY - geWinResize.y), 300, window.innerHeight - 12);
+  geWin.style.width = w + 'px';
+  geWin.style.height = h + 'px';
+  sizeGeCanvas();
+});
+const endGeWinResize = () => { geWinResize = null; };
+$('geResize').addEventListener('pointerup', endGeWinResize);
+$('geResize').addEventListener('pointercancel', endGeWinResize);
+
 function openGraph() {
   graphOpen = true;
+  placeGraphWindow();
   $('graphOverlay').classList.remove('hidden');
   buildGeChannelList();
   requestAnimationFrame(() => { sizeGeCanvas(); geInfo(); });

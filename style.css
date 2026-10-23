@@ -308,6 +308,23 @@ body {
 .pb-track { background: #e7dfc8; }
 #pbFill { background: #57a773; }
 
+/* Floating Graph Editor: the window floats over the app.
+   The overlay lets all clicks through, so the viewport,
+   the tools, and the timeline stay live while it is open. */
+#graphOverlay { background: transparent; pointer-events: none; display: block; }
+#graphWindow {
+  position: absolute; pointer-events: auto;
+  box-shadow: 0 14px 40px rgba(46, 61, 92, .30);
+}
+.ge-head { cursor: move; touch-action: none; user-select: none; }
+#geResize {
+  position: absolute; right: 3px; bottom: 3px; width: 26px; height: 26px;
+  cursor: nwse-resize; touch-action: none; border-radius: 0 0 10px 0;
+  background:
+    linear-gradient(135deg, transparent 55%, #71809c 55%, #71809c 65%, transparent 65%),
+    linear-gradient(135deg, transparent 72%, #71809c 72%, #71809c 82%, transparent 82%);
+}
+
 /* Timeline key tools: copy, paste, delete, and shift. */
 #ruler { touch-action: none; }
 .key-edit { display: flex; align-items: center; gap: 5px; }
