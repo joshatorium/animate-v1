@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=28">
+<link rel="stylesheet" href="style.css?v=29">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -57,7 +57,8 @@
     <!-- ===== Ghost options box ===== -->
     <div id="ghostBox" class="hidden">
       <div class="ghost-head"><span>GHOSTS</span><button id="ghostClose" class="btn small" title="Close the ghost options">&#10005;</button></div>
-      <label class="ghost-row">Ghosts each side <input type="number" id="ghostCount" value="3" min="1" max="8" step="1"></label>
+      <label class="ghost-row">Ghosts behind <input type="number" id="ghostBehind" value="3" min="0" max="8" step="1"></label>
+      <label class="ghost-row">Ghosts ahead <input type="number" id="ghostAhead" value="3" min="0" max="8" step="1"></label>
       <label class="ghost-row">Frames apart <input type="number" id="ghostStep" value="4" min="1" max="24" step="1"></label>
       <div class="ghost-note">Behind is red. Ahead is blue. Near ghosts are darker. Far ghosts are lighter.</div>
     </div>
@@ -234,6 +235,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=28"></script>
+<script type="module" src="app.js?v=29"></script>
 </body>
 </html>

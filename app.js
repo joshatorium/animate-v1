@@ -38,7 +38,8 @@ let frameFloat = 1;          // smooth playhead while playing
 let playing = false;
 let activeTool = 'move';     // select | move | rotate | scale
 let ghostOn = false;
-let ghostCount = 3;   // ghosts on each side of the frame
+let ghostAhead = 3;   // ghosts after this frame (blue)
+let ghostBehind = 3;  // ghosts before this frame (red)
 let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
 let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs
@@ -713,11 +714,12 @@ function updateGhosts() {
   const show = ghostOn && !playblastActive;
   for (const g of ghostPool) {
     const mesh = g.mesh;
-    if (!show || g.idx > ghostCount) { mesh.visible = false; continue; }
+    const limit = g.side > 0 ? ghostAhead : ghostBehind;
+    if (!show || g.idx > limit) { mesh.visible = false; continue; }
     const f = currentFrame + g.side * g.idx * ghostStep;
     mesh.visible = f >= FIRST_FRAME && f <= LAST_FRAME;
     if (!mesh.visible) continue;
-    const t = ghostCount > 1 ? (g.idx - 1) / (ghostCount - 1) : 0;
+    const t = limit > 1 ? (g.idx - 1) / (limit - 1) : 0;
     mesh.material.opacity = 0.5 + (0.08 - 0.5) * t;
     const gp = evalAll(f);
     mesh.position.set(
@@ -908,15 +910,19 @@ function ghostSetting(input, min, max, fallback) {
   const v = parseInt(input.value, 10);
   return isFinite(v) ? clamp(v, min, max) : fallback;
 }
-$('ghostCount').addEventListener('input', () => {
-  ghostCount = ghostSetting($('ghostCount'), 1, 8, 3);
+$('ghostBehind').addEventListener('input', () => {
+  ghostBehind = ghostSetting($('ghostBehind'), 0, 8, 3);
+  updateGhosts();
+});
+$('ghostAhead').addEventListener('input', () => {
+  ghostAhead = ghostSetting($('ghostAhead'), 0, 8, 3);
   updateGhosts();
 });
 $('ghostStep').addEventListener('input', () => {
   ghostStep = ghostSetting($('ghostStep'), 1, 24, 4);
   updateGhosts();
 });
-for (const id of ['ghostCount', 'ghostStep']) {
+for (const id of ['ghostBehind', 'ghostAhead', 'ghostStep']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
 }
 
