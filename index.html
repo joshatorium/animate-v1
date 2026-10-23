@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -50,9 +50,17 @@
       <button class="tool-btn" data-tool="rotate" title="Rotate tool (E)"><span class="tool-icon">&#8635;</span>Rotate <b>E</b></button>
       <button class="tool-btn" data-tool="scale" title="Scale tool (R)"><span class="tool-icon">&#10530;</span>Scale <b>R</b></button>
       <button class="tool-btn" id="btnSetKey" title="Set a key at this frame (S). Right click: turn Auto Key on or off."><span class="tool-icon">&#9670;</span>Set Key <b>S</b><span id="autoKeyTag" class="autokey-tag hidden">AUTO KEY ON</span></button>
-      <button class="tool-btn" id="btnGhost" title="Ghost: see the pose 6 frames before and after (G)"><span class="tool-icon">&#9684;</span>Ghost <b>G</b></button>
+      <button class="tool-btn" id="btnGhost" title="Ghost: onion skins around this frame (G)"><span class="tool-icon">&#9684;</span>Ghost <b>G</b></button>
       <div class="rail-hint">Camera<br><b>Alt + drag</b><br>turn &bull; move &bull; zoom</div>
     </nav>
+
+    <!-- ===== Ghost options box ===== -->
+    <div id="ghostBox" class="hidden">
+      <div class="ghost-head"><span>GHOSTS</span><button id="ghostClose" class="btn small" title="Close the ghost options">&#10005;</button></div>
+      <label class="ghost-row">Ghosts each side <input type="number" id="ghostCount" value="3" min="1" max="8" step="1"></label>
+      <label class="ghost-row">Frames apart <input type="number" id="ghostStep" value="4" min="1" max="24" step="1"></label>
+      <div class="ghost-note">Near ghosts are darker. Far ghosts are lighter.</div>
+    </div>
 
     <section id="viewWrap">
       <div id="viewLabel">3D VIEW &mdash; Camera 1</div>
@@ -226,6 +234,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=26"></script>
+<script type="module" src="app.js?v=27"></script>
 </body>
 </html>

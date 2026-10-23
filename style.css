@@ -325,6 +325,22 @@ body {
     linear-gradient(135deg, transparent 72%, #71809c 72%, #71809c 82%, transparent 82%);
 }
 
+/* Ghost options box: floats beside the tool rail. */
+#ghostBox {
+  position: fixed; left: 96px; top: 288px; z-index: 46; width: 218px;
+  background: #fffdf2; border: 2px solid #3c4a63; border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(46, 61, 92, .25);
+  padding: 10px 12px; color: #2e3d5c;
+}
+.ghost-head { display: flex; align-items: center; justify-content: space-between; font-weight: 800; letter-spacing: .04em; margin-bottom: 8px; }
+.ghost-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; margin-bottom: 7px; }
+.ghost-row input {
+  width: 58px; background: #ffffff; color: #2e3d5c;
+  border: 2px solid #3c4a63; border-radius: 6px; padding: 2px 4px;
+}
+.ghost-row input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+.ghost-note { color: #71809c; font-size: 12.5px; line-height: 1.35; }
+
 /* Timeline key tools: copy, paste, delete, and shift. */
 #ruler { touch-action: none; }
 .key-edit { display: flex; align-items: center; gap: 5px; }

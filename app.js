@@ -38,6 +38,8 @@ let frameFloat = 1;          // smooth playhead while playing
 let playing = false;
 let activeTool = 'move';     // select | move | rotate | scale
 let ghostOn = false;
+let ghostCount = 3;   // ghosts on each side of the frame
+let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
 let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs
 const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1 };
@@ -425,7 +427,7 @@ let charGroup = null, ballMesh = null, tailRoot = null, tailJoints = [], legL = 
 let tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
 let tailCtrlMeshes = [];      // the ring meshes in the 3D view
 let selectedCtrl = 'ball';    // 'ball' or a tail channel name
-let ghostA = null, ghostB = null;
+let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
 let ballRadius = 0.9, legClear = 0;
 
 // Sketch look, after the user's pencil-sphere sketch:
@@ -555,7 +557,8 @@ function disposeGroup(g) {
 
 function buildRig() {
   if (charGroup) { scene.remove(charGroup); disposeGroup(charGroup); }
-  if (ghostA) { scene.remove(ghostA); scene.remove(ghostB); }
+  for (const g of ghostPool) { scene.remove(g.mesh); g.mesh.material.dispose(); }
+  ghostPool = [];
   charGroup = new THREE.Group();
   charGroup.name = 'BallControl';
   ballRadius = 0.9 * sliders.ballSize;
@@ -653,10 +656,19 @@ function buildRig() {
     legR = mkLeg('LegR', -ballRadius * 0.42);
   }
 
-  ghostA = new THREE.Mesh(unitSphere, ghostMat);
-  ghostB = new THREE.Mesh(unitSphere, ghostMat);
-  ghostA.name = 'GhostBefore'; ghostB.name = 'GhostAfter';
-  scene.add(ghostA); scene.add(ghostB);
+  // Ghost pool: up to 8 ghosts per side. Each ghost gets
+  // its own material, so near ghosts can draw darker
+  // than far ghosts.
+  ghostPool = [];
+  for (const side of [-1, 1]) {
+    for (let idx = 1; idx <= 8; idx++) {
+      const m = new THREE.Mesh(unitSphere, ghostMat.clone());
+      m.name = side < 0 ? `GhostBefore${idx}` : `GhostAfter${idx}`;
+      m.visible = false;
+      scene.add(m);
+      ghostPool.push({ mesh: m, side, idx });
+    }
+  }
   scene.add(charGroup);
   selectedCtrl = 'ball';
   tc.attach(charGroup);
@@ -692,13 +704,19 @@ function applyPose() {
   updateSettings();
 }
 
-// Ghosts: the ball pose 6 frames before and after this frame.
+// Ghosts (onion skins): ball poses before and after this
+// frame. Ghosts near the frame are darker. Ghosts far
+// from the frame are lighter.
 function updateGhosts() {
   const show = ghostOn && !playblastActive;
-  for (const [mesh, f] of [[ghostA, currentFrame - 6], [ghostB, currentFrame + 6]]) {
-    if (!mesh) continue;
-    mesh.visible = show && f >= FIRST_FRAME && f <= LAST_FRAME;
+  for (const g of ghostPool) {
+    const mesh = g.mesh;
+    if (!show || g.idx > ghostCount) { mesh.visible = false; continue; }
+    const f = currentFrame + g.side * g.idx * ghostStep;
+    mesh.visible = f >= FIRST_FRAME && f <= LAST_FRAME;
     if (!mesh.visible) continue;
+    const t = ghostCount > 1 ? (g.idx - 1) / (ghostCount - 1) : 0;
+    mesh.material.opacity = 0.5 + (0.08 - 0.5) * t;
     const gp = evalAll(f);
     mesh.position.set(
       gp.moveX,
@@ -868,9 +886,37 @@ document.querySelectorAll('.chan-input').forEach((input) => {
 function setGhost(on) {
   ghostOn = on;
   $('btnGhost').classList.toggle('on', on);
+  $('ghostBox').classList.toggle('hidden', !on);
   updateGhosts();
 }
-$('btnGhost').addEventListener('click', () => setGhost(!ghostOn));
+// Pressing Ghost turns ghosts on and opens the options
+// box. Pressing it again with the box open turns them off.
+// If the box was closed by hand, the press reopens it.
+function ghostButtonPress() {
+  if (!ghostOn) { setGhost(true); return; }
+  if ($('ghostBox').classList.contains('hidden')) {
+    $('ghostBox').classList.remove('hidden');
+    return;
+  }
+  setGhost(false);
+}
+$('btnGhost').addEventListener('click', ghostButtonPress);
+$('ghostClose').addEventListener('click', () => $('ghostBox').classList.add('hidden'));
+function ghostSetting(input, min, max, fallback) {
+  const v = parseInt(input.value, 10);
+  return isFinite(v) ? clamp(v, min, max) : fallback;
+}
+$('ghostCount').addEventListener('input', () => {
+  ghostCount = ghostSetting($('ghostCount'), 1, 8, 3);
+  updateGhosts();
+});
+$('ghostStep').addEventListener('input', () => {
+  ghostStep = ghostSetting($('ghostStep'), 1, 24, 4);
+  updateGhosts();
+});
+for (const id of ['ghostCount', 'ghostStep']) {
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+}
 
 function setGizmoSize(factor) {
   // Grow or shrink the tool gizmo in the viewport.
@@ -953,7 +999,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'e') setTool('rotate');
   else if (k === 'r') setTool('scale');
   else if (k === 's') setKey();
-  else if (k === 'g') setGhost(!ghostOn);
+  else if (k === 'g') ghostButtonPress();
   else if (k === '+' || k === '=') { e.preventDefault(); setGizmoSize(1.1); }
   else if (k === '-' || k === '_') { e.preventDefault(); setGizmoSize(0.9); }
   else if (e.key === 'Delete' || e.key === 'Backspace') {
