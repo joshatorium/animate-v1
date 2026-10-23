@@ -90,7 +90,7 @@ function addKey(name, frame, value, tangent = 'auto') {
   const old = keys.find((k) => k.frame === frame);
   if (old) {
     // A new tangent type clears any bezier slopes on the key.
-    if (old.tangent !== tangent) { delete old.slopeIn; delete old.slopeOut; }
+    if (old.tangent !== tangent) { delete old.slopeIn; delete old.slopeOut; delete old.lenIn; delete old.lenOut; }
     old.value = value; old.tangent = tangent;
     return old;
   }
@@ -135,12 +135,17 @@ function evalChannel(name, frame) {
   // Bezier handles: a slope set by a handle drag wins over the type.
   if (typeof k0.slopeOut === 'number') m0 = k0.slopeOut;
   if (typeof k1.slopeIn === 'number') m1 = k1.slopeIn;
-  const t2 = t * t, t3 = t2 * t;
-  const h00 = 2 * t3 - 3 * t2 + 1;
-  const h10 = t3 - 2 * t2 + t;
-  const h01 = -2 * t3 + 3 * t2;
-  const h11 = t3 - t2;
-  return h00 * k0.value + h10 * h * m0 + h01 * k1.value + h11 * h * m1;
+  // Cubic bezier form. A handle length of h/3 on both sides
+  // matches the old Hermite curve exactly, so untouched keys
+  // and old files keep their shape. A dragged handle stores
+  // its own length (lenOut / lenIn): a short handle hugs the
+  // key, a long handle reaches across the span.
+  const L0 = typeof k0.lenOut === 'number' ? clamp(k0.lenOut, 0.1, h) : h / 3;
+  const L1 = typeof k1.lenIn === 'number' ? clamp(k1.lenIn, 0.1, h) : h / 3;
+  const c0 = k0.value + m0 * L0;
+  const c1 = k1.value - m1 * L1;
+  const u = 1 - t;
+  return u * u * u * k0.value + 3 * u * u * t * c0 + 3 * u * t * t * c1 + t * t * t * k1.value;
 }
 function evalAll(frame) {
   const pose = {};
@@ -850,6 +855,29 @@ function setGhost(on) {
 }
 $('btnGhost').addEventListener('click', () => setGhost(!ghostOn));
 
+function stepPlayheadToKey(dir) {
+  // Jump the playhead to the next or previous key frame.
+  // With the Graph Editor open, only its picked curves count.
+  let frames;
+  if (graphOpen && typeof geSelected !== 'undefined' && geSelected.size) {
+    frames = new Set();
+    for (const n of geSelected) for (const k of channels[n]) frames.add(k.frame);
+  } else {
+    frames = keyFrames();
+  }
+  const sorted = [...frames].sort((a, b) => a - b);
+  stopPlay();
+  let target;
+  if (dir > 0) target = sorted.find((f) => f > currentFrame);
+  else target = sorted.reverse().find((f) => f < currentFrame);
+  if (target === undefined) {
+    say(dir > 0 ? 'No key after this frame.' : 'No key before this frame.');
+    return;
+  }
+  setFrame(target);
+  if (graphOpen) drawGraph();
+  say(`Frame ${target}.`);
+}
 window.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
@@ -871,6 +899,22 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'arrowright') nudgeKeys(fa, 0);
     else if (k === 'arrowup') nudgeKeys(0, step);
     else if (k === 'arrowdown') nudgeKeys(0, -step);
+    return;
+  }
+  const stepKeyHit = e.key === '>' || e.key === '<' ||
+    (e.shiftKey && (e.code === 'Period' || e.code === 'Comma'));
+  if (stepKeyHit) {
+    // > jumps to the next key. < jumps to the previous key.
+    // With Alt held, they step one frame instead.
+    e.preventDefault();
+    const dir = (e.key === '>' || e.code === 'Period') ? 1 : -1;
+    if (e.altKey) {
+      stopPlay();
+      setFrame(clamp(currentFrame + dir, FIRST_FRAME, LAST_FRAME));
+      if (graphOpen) drawGraph();
+    } else {
+      stepPlayheadToKey(dir);
+    }
     return;
   }
   if (k === 'f') {
@@ -1045,7 +1089,9 @@ function copyTimelineKeys() {
       keys.push({
         chan: name, off: k.frame - anchor, value: k.value, tangent: k.tangent,
         ...(typeof k.slopeIn === 'number' ? { slopeIn: k.slopeIn } : {}),
-        ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {})
+        ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {}),
+        ...(typeof k.lenIn === 'number' ? { lenIn: k.lenIn } : {}),
+        ...(typeof k.lenOut === 'number' ? { lenOut: k.lenOut } : {})
       });
     }
   }
@@ -1068,6 +1114,8 @@ function pasteTimelineKeys() {
     const nk = { frame: f, value: item.value, tangent: item.tangent };
     if (typeof item.slopeIn === 'number') nk.slopeIn = item.slopeIn;
     if (typeof item.slopeOut === 'number') nk.slopeOut = item.slopeOut;
+    if (typeof item.lenIn === 'number') nk.lenIn = item.lenIn;
+    if (typeof item.lenOut === 'number') nk.lenOut = item.lenOut;
     channels[item.chan].push(nk);
     pasted.add(f);
   }
@@ -1232,7 +1280,9 @@ $('openFile').addEventListener('change', async (e) => {
           .map((k) => ({
             frame: k.frame, value: k.value, tangent: k.tangent || 'auto',
             ...(typeof k.slopeIn === 'number' ? { slopeIn: k.slopeIn } : {}),
-            ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {})
+            ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {}),
+            ...(typeof k.lenIn === 'number' ? { lenIn: k.lenIn } : {}),
+            ...(typeof k.lenOut === 'number' ? { lenOut: k.lenOut } : {})
           }));
         sortKeys(name);
       }
@@ -1275,6 +1325,22 @@ let geDrag = null;
 let geView = null;          // zoomed view {f0, f1, v0, v1}; null = full auto view
 function keyIsPicked(key) { return geSelKeys.some((s) => s.key === key); }
 
+// The length of one bezier handle, in frames: the stored
+// length if the handle was dragged, else a third of the span
+// to the next key (the neutral length), else 4 at the ends.
+function keyHandleLen(name, key, side) {
+  const keys = channels[name];
+  const i = keys.indexOf(key);
+  if (side === 'out') {
+    if (typeof key.lenOut === 'number') return key.lenOut;
+    const next = keys[i + 1];
+    return next ? (next.frame - key.frame) / 3 : 4;
+  }
+  if (typeof key.lenIn === 'number') return key.lenIn;
+  const prev = keys[i - 1];
+  return prev ? (key.frame - prev.frame) / 3 : 4;
+}
+
 // The slope of a key on one side, as the curve math sees it:
 // a bezier slope set by hand wins, then the tangent type rules.
 function keySlope(name, key, side) {
@@ -1300,7 +1366,7 @@ function buildGeChannelList() {
   box.innerHTML = '';
   const hint = document.createElement('div');
   hint.className = 'ge-hint';
-  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves. Wheel: zoom. F: frame a picked key. Double-click graph: full view.';
+  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves. Wheel: zoom. F: frame a picked key. Double-click graph: full view. > and < jump between keys. Alt+> and Alt+< step one frame.';
   box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
@@ -1438,10 +1504,11 @@ function drawGraph() {
   geHandles = null;
   if (geSelectedKey && channels[geKeyChannel].includes(geSelectedKey)) {
     const k = geSelectedKey;
-    const H = 4;   // a handle sits 4 frames from its key
+    const Hin = keyHandleLen(geKeyChannel, k, 'in');
+    const Hout = keyHandleLen(geKeyChannel, k, 'out');
     const kx = g.x(k.frame), ky = g.y(k.value);
-    const inPt = { x: g.x(k.frame - H), y: g.y(k.value - keySlope(geKeyChannel, k, 'in') * H) };
-    const outPt = { x: g.x(k.frame + H), y: g.y(k.value + keySlope(geKeyChannel, k, 'out') * H) };
+    const inPt = { x: g.x(k.frame - Hin), y: g.y(k.value - keySlope(geKeyChannel, k, 'in') * Hin) };
+    const outPt = { x: g.x(k.frame + Hout), y: g.y(k.value + keySlope(geKeyChannel, k, 'out') * Hout) };
     geHandles = { in: inPt, out: outPt };
     gctx.strokeStyle = '#ffb042'; gctx.lineWidth = 1.5;
     gctx.beginPath(); gctx.moveTo(inPt.x, inPt.y); gctx.lineTo(kx, ky); gctx.lineTo(outPt.x, outPt.y); gctx.stroke();
@@ -1489,7 +1556,7 @@ function geInfo() {
     (geSelKeys.length > 1 ? `${geSelKeys.length} keys picked. ` : '') +
     `Picked key — Channel ${CHAN_LABEL[geKeyChannel]} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
-    'Drag the square handles to set bezier slopes. ' +
+    'Drag a square handle: pull in or out for length, up or down for slope. ' +
     'Press Delete to remove the picked keys.';
 }
 // Remove the picked key from the picked channel.
@@ -1625,7 +1692,7 @@ document.querySelectorAll('.tan-btn').forEach((b) =>
     }
     for (const k of targets) {
       k.tangent = b.dataset.tan;
-      delete k.slopeIn; delete k.slopeOut;
+      delete k.slopeIn; delete k.slopeOut; delete k.lenIn; delete k.lenOut;
     }
     livePose = evalAll(currentFrame);
     applyPose(); drawGraph(); geInfo(); drawRuler();
@@ -1750,11 +1817,24 @@ geCanvas.addEventListener('pointermove', (e) => {
   if (geDrag.kind === 'handle') {
     if (!geDrag.pushed) { pushHistory('Move tangent handle'); geDrag.pushed = true; }
     const k = geSelectedKey;
-    const H = 4;
+    const keys = channels[geKeyChannel];
+    const i = keys.indexOf(k);
+    const hf = g.frame(e.offsetX);
     const hv = g.value(e.offsetY);
-    // The handle stays 4 frames out. Its height sets the slope.
-    if (geDrag.side === 'out') k.slopeOut = Math.round(((hv - k.value) / H) * 100) / 100;
-    else k.slopeIn = Math.round(((k.value - hv) / H) * 100) / 100;
+    // Pull the handle in or out to set its length. Drag up
+    // or down to set its slope. The length stops at the
+    // neighbor key, so a handle cannot pass it.
+    if (geDrag.side === 'out') {
+      const maxLen = keys[i + 1] ? keys[i + 1].frame - k.frame : 48;
+      const len = clamp(Math.round((hf - k.frame) * 10) / 10, 0.5, Math.max(0.5, maxLen));
+      k.lenOut = len;
+      k.slopeOut = Math.round(((hv - k.value) / len) * 100) / 100;
+    } else {
+      const maxLen = keys[i - 1] ? k.frame - keys[i - 1].frame : 48;
+      const len = clamp(Math.round((k.frame - hf) * 10) / 10, 0.5, Math.max(0.5, maxLen));
+      k.lenIn = len;
+      k.slopeIn = Math.round(((k.value - hv) / len) * 100) / 100;
+    }
     livePose = evalAll(currentFrame);
     applyPose(); drawGraph(); geInfo();
     return;
