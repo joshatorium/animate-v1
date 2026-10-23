@@ -918,20 +918,20 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'arrowdown') nudgeKeys(0, -step);
     return;
   }
-  const stepKeyHit = e.key === '>' || e.key === '<' ||
-    (e.shiftKey && (e.code === 'Period' || e.code === 'Comma'));
-  if (stepKeyHit) {
+  const dirKey = (e.code === 'Period' || e.key === '>' || e.key === '.') ? 1
+    : (e.code === 'Comma' || e.key === '<' || e.key === ',') ? -1 : 0;
+  if (dirKey !== 0 && (e.altKey || e.key === '>' || e.key === '<')) {
     // > jumps to the next key. < jumps to the previous key.
-    // With Alt held, they step one frame instead.
+    // With Alt held, the same keys step one frame instead.
+    // The key code is checked too, so Alt works on any layout.
     e.preventDefault();
-    const dir = (e.key === '>' || e.code === 'Period') ? 1 : -1;
     if (e.altKey) {
       stopPlay();
-      setFrame(clamp(currentFrame + dir, FIRST_FRAME, LAST_FRAME));
+      setFrame(clamp(currentFrame + dirKey, FIRST_FRAME, LAST_FRAME));
       if (graphOpen) drawGraph();
       say(`Frame ${currentFrame}.`);
     } else {
-      stepPlayheadToKey(dir);
+      stepPlayheadToKey(dirKey);
     }
     return;
   }
@@ -1384,7 +1384,7 @@ function buildGeChannelList() {
   box.innerHTML = '';
   const hint = document.createElement('div');
   hint.className = 'ge-hint';
-  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves. Wheel: zoom. F: frame a picked key. Double-click graph: full view. > and < jump between keys. Alt+> and Alt+< step one frame.';
+  hint.textContent = 'Click: pick one curve. Shift+click: pick more curves. Wheel: zoom. Alt+middle-drag: pan. F: frame a picked key. Double-click graph: full view. > and < jump between keys. Alt+> and Alt+< step one frame.';
   box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
@@ -1784,6 +1784,21 @@ $('geValueInput').addEventListener('change', () => {
 });
 
 geCanvas.addEventListener('pointerdown', (e) => {
+  // Middle mouse: Alt+drag pans the view. A plain middle
+  // press does nothing, so it cannot start a stray drag box.
+  if (e.button === 1) {
+    e.preventDefault();
+    if (e.altKey) {
+      const g = geGeom();
+      if (!geView) geView = { f0: g.f0, f1: g.f1, v0: g.lo, v1: g.hi };
+      geDrag = {
+        kind: 'pan', x: e.offsetX, y: e.offsetY, view: { ...geView },
+        pxF: (g.w - 62) / (g.f1 - g.f0), pxV: (g.h - 40) / (g.hi - g.lo)
+      };
+      geCanvas.setPointerCapture(e.pointerId);
+    }
+    return;
+  }
   const g = geGeom();
   const mx = e.offsetX, my = e.offsetY;
   // 1) A bezier handle of the active key. A click right on
@@ -1833,6 +1848,18 @@ geCanvas.addEventListener('pointerdown', (e) => {
 geCanvas.addEventListener('pointermove', (e) => {
   if (!geDrag) return;
   const g = geGeom();
+  if (geDrag.kind === 'pan') {
+    // The content follows the cursor: the view window moves
+    // back in frame and with the cursor in value.
+    const df = (e.offsetX - geDrag.x) / geDrag.pxF;
+    const dv = (e.offsetY - geDrag.y) / geDrag.pxV;
+    geView.f0 = geDrag.view.f0 - df;
+    geView.f1 = geDrag.view.f1 - df;
+    geView.v0 = geDrag.view.v0 + dv;
+    geView.v1 = geDrag.view.v1 + dv;
+    drawGraph();
+    return;
+  }
   if (geDrag.kind === 'marquee') {
     geMarquee.x1 = e.offsetX; geMarquee.y1 = e.offsetY;
     drawGraph();
