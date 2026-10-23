@@ -1791,7 +1791,7 @@ geCanvas.addEventListener('pointerdown', (e) => {
   // handle sits close to it.
   if (geSelectedKey && geHandles) {
     const kx = g.x(geSelectedKey.frame), ky = g.y(geSelectedKey.value);
-    const onKey = Math.hypot(kx - mx, ky - my) <= 10;
+    const onKey = Math.hypot(kx - mx, ky - my) <= 12;
     if (!onKey) {
       for (const side of ['in', 'out']) {
         const hp = geHandles[side];
@@ -1807,7 +1807,7 @@ geCanvas.addEventListener('pointerdown', (e) => {
   let hit = null, hitChan = null;
   for (const n of geSelected) {
     for (const k of channels[n]) {
-      if (Math.hypot(g.x(k.frame) - mx, g.y(k.value) - my) <= 10) {
+      if (Math.hypot(g.x(k.frame) - mx, g.y(k.value) - my) <= 12) {
         hit = k; hitChan = n; break;
       }
     }
