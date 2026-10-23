@@ -872,6 +872,12 @@ function setGhost(on) {
 }
 $('btnGhost').addEventListener('click', () => setGhost(!ghostOn));
 
+function setGizmoSize(factor) {
+  // Grow or shrink the tool gizmo in the viewport.
+  const next = clamp(Math.round(tc.size * factor * 100) / 100, 0.25, 4);
+  tc.setSize(next);
+  say(`Gizmo size ${Math.round(next * 100)}%.`);
+}
 function stepPlayheadToKey(dir) {
   // Jump the playhead to the next or previous key frame.
   // With the Graph Editor open, only its picked curves count.
@@ -948,6 +954,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'r') setTool('scale');
   else if (k === 's') setKey();
   else if (k === 'g') setGhost(!ghostOn);
+  else if (k === '+' || k === '=') { e.preventDefault(); setGizmoSize(1.1); }
+  else if (k === '-' || k === '_') { e.preventDefault(); setGizmoSize(0.9); }
   else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (graphOpen) { e.preventDefault(); deletePickedKey(); }
     else if (tlSelFrames.size) { e.preventDefault(); deleteTimelineKeys(); }
