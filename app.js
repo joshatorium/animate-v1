@@ -663,6 +663,8 @@ function buildRig() {
   for (const side of [-1, 1]) {
     for (let idx = 1; idx <= 8; idx++) {
       const m = new THREE.Mesh(unitSphere, ghostMat.clone());
+      // Behind ghosts are red. Ahead ghosts are blue.
+      m.material.color.set(side < 0 ? 0xd94f4f : 0x3f7fbf);
       m.name = side < 0 ? `GhostBefore${idx}` : `GhostAfter${idx}`;
       m.visible = false;
       scene.add(m);
