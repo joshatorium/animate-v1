@@ -806,8 +806,12 @@ function writeKeys() {
 function setKey() {
   pushHistory('Set key');
   writeKeys();
+  // The fresh key picks itself on the timeline, ready to move or copy.
+  tlSelFrames.clear();
+  tlSelFrames.add(currentFrame);
   say(`Key set at frame ${currentFrame}.`);
   drawRuler();
+  updateKeyTools();
   if (graphOpen) drawGraph();
 }
 $('btnSetKey').addEventListener('click', setKey);
