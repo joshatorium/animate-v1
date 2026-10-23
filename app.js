@@ -137,15 +137,32 @@ function evalChannel(name, frame) {
   if (typeof k1.slopeIn === 'number') m1 = k1.slopeIn;
   // Cubic bezier form. A handle length of h/3 on both sides
   // matches the old Hermite curve exactly, so untouched keys
-  // and old files keep their shape. A dragged handle stores
-  // its own length (lenOut / lenIn): a short handle hugs the
-  // key, a long handle reaches across the span.
+  // and old files keep their shape.
+  const hasLen = typeof k0.lenOut === 'number' || typeof k1.lenIn === 'number';
   const L0 = typeof k0.lenOut === 'number' ? clamp(k0.lenOut, 0.1, h) : h / 3;
   const L1 = typeof k1.lenIn === 'number' ? clamp(k1.lenIn, 0.1, h) : h / 3;
   const c0 = k0.value + m0 * L0;
   const c1 = k1.value - m1 * L1;
-  const u = 1 - t;
-  return u * u * u * k0.value + 3 * u * u * t * c0 + 3 * u * t * t * c1 + t * t * t * k1.value;
+  if (!hasLen) {
+    const u = 1 - t;
+    return u * u * u * k0.value + 3 * u * u * t * c0 + 3 * u * t * t * c1 + t * t * t * k1.value;
+  }
+  // A dragged handle stores its own length. The curve is
+  // parametric, like Maya: the handle point sits L frames
+  // from its key, so a long handle pulls the curve toward
+  // its height across more time, and a short handle keeps
+  // the pull close to the key. Find the curve parameter
+  // whose frame matches, then read its value.
+  const x0 = k0.frame, x1 = k0.frame + L0, x2 = k1.frame - L1, x3 = k1.frame;
+  let lo = 0, hi = 1, tt = t;
+  for (let n = 0; n < 24; n++) {
+    tt = (lo + hi) / 2;
+    const u = 1 - tt;
+    const x = u * u * u * x0 + 3 * u * u * tt * x1 + 3 * u * tt * tt * x2 + tt * tt * tt * x3;
+    if (x < frame) lo = tt; else hi = tt;
+  }
+  const u = 1 - tt;
+  return u * u * u * k0.value + 3 * u * u * tt * c0 + 3 * u * tt * tt * c1 + tt * tt * tt * k1.value;
 }
 function evalAll(frame) {
   const pose = {};
@@ -912,6 +929,7 @@ window.addEventListener('keydown', (e) => {
       stopPlay();
       setFrame(clamp(currentFrame + dir, FIRST_FRAME, LAST_FRAME));
       if (graphOpen) drawGraph();
+      say(`Frame ${currentFrame}.`);
     } else {
       stepPlayheadToKey(dir);
     }
@@ -1768,14 +1786,20 @@ $('geValueInput').addEventListener('change', () => {
 geCanvas.addEventListener('pointerdown', (e) => {
   const g = geGeom();
   const mx = e.offsetX, my = e.offsetY;
-  // 1) A bezier handle of the active key.
+  // 1) A bezier handle of the active key. A click right on
+  // the key dot itself picks the key, even when a short
+  // handle sits close to it.
   if (geSelectedKey && geHandles) {
-    for (const side of ['in', 'out']) {
-      const hp = geHandles[side];
-      if (hp && Math.hypot(hp.x - mx, hp.y - my) <= 16) {
-        geDrag = { kind: 'handle', side, pushed: false };
-        geCanvas.setPointerCapture(e.pointerId);
-        return;
+    const kx = g.x(geSelectedKey.frame), ky = g.y(geSelectedKey.value);
+    const onKey = Math.hypot(kx - mx, ky - my) <= 10;
+    if (!onKey) {
+      for (const side of ['in', 'out']) {
+        const hp = geHandles[side];
+        if (hp && Math.hypot(hp.x - mx, hp.y - my) <= 16) {
+          geDrag = { kind: 'handle', side, pushed: false };
+          geCanvas.setPointerCapture(e.pointerId);
+          return;
+        }
       }
     }
   }
