@@ -851,6 +851,12 @@ window.addEventListener('keydown', (e) => {
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'c' && !graphOpen && tlSelFrames.size) {
+    e.preventDefault(); copyTimelineKeys(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && k === 'v' && !graphOpen && tlClipboard) {
+    e.preventDefault(); pasteTimelineKeys(); return;
+  }
   if (graphOpen && k.startsWith('arrow')) {
     // Arrow keys shift picked keys while the Graph Editor is open.
     e.preventDefault();
@@ -876,9 +882,9 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'r') setTool('scale');
   else if (k === 's') setKey();
   else if (k === 'g') setGhost(!ghostOn);
-  else if ((e.key === 'Delete' || e.key === 'Backspace') && graphOpen) {
-    e.preventDefault();
-    deletePickedKey();
+  else if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (graphOpen) { e.preventDefault(); deletePickedKey(); }
+    else if (tlSelFrames.size) { e.preventDefault(); deleteTimelineKeys(); }
   }
   else if (k === ' ') { e.preventDefault(); playing ? stopPlay() : startPlay(); }
 });
@@ -919,13 +925,19 @@ function drawRuler() {
     rctx.beginPath(); rctx.moveTo(x, 24); rctx.lineTo(x, 33); rctx.stroke();
     if ((f - 1) % 4 === 0) { rctx.fillStyle = '#5a6c8a'; rctx.fillText(String(f), x, 14); }
   }
-  // Key diamonds.
-  rctx.fillStyle = '#ffb042';
-  for (const f of keyFrames()) {
+  // Key diamonds. Picked keys are rose, larger, and ink-edged.
+  const framesNow = keyFrames();
+  for (const f of [...tlSelFrames]) if (!framesNow.has(f)) tlSelFrames.delete(f);
+  for (const f of [...framesNow].sort((a, b) => a - b)) {
     const x = frameX(f), y = 48;
+    const picked = tlSelFrames.has(f);
+    const r = picked ? 8.5 : 7;
     rctx.beginPath();
-    rctx.moveTo(x, y - 7); rctx.lineTo(x + 7, y); rctx.lineTo(x, y + 7); rctx.lineTo(x - 7, y);
-    rctx.closePath(); rctx.fill();
+    rctx.moveTo(x, y - r); rctx.lineTo(x + r, y); rctx.lineTo(x, y + r); rctx.lineTo(x - r, y);
+    rctx.closePath();
+    rctx.fillStyle = picked ? '#d3546b' : '#ffb042';
+    rctx.fill();
+    if (picked) { rctx.strokeStyle = '#3c4a63'; rctx.lineWidth = 1.5; rctx.stroke(); rctx.lineWidth = 1; }
   }
   // Playhead.
   const px = frameX(currentFrame);
@@ -943,11 +955,190 @@ function rulerFrameFromEvent(e) {
   const ratio = (e.clientX - rect.left - padL) / (w - padL - 12);
   return clamp(Math.round(1 + ratio * (LAST_FRAME - 1)), FIRST_FRAME, LAST_FRAME);
 }
+
+// ---------- Timeline key editing ----------
+// A timeline pick is a FRAME. The pick covers every channel
+// key at that frame, like a Maya keyframe. Shift+click adds
+// picks. Middle-drag moves the picked frames left or right.
+const tlSelFrames = new Set();
+let tlClipboard = null;   // {anchor, keys:[{chan, off, value, tangent, slopeIn?, slopeOut?}]}
+let tlKeyDrag = null;     // {lastFrame, historyDone}
+function sortedTlSel() { return [...tlSelFrames].sort((a, b) => a - b); }
+function updateKeyTools() {
+  const info = $('keySelInfo');
+  if (!info) return;
+  const n = tlSelFrames.size;
+  info.textContent = n ? `${n} key frame${n > 1 ? 's' : ''} picked` : 'No key picked';
+}
+function refreshAfterKeyEdit(msg) {
+  livePose = evalAll(currentFrame);
+  applyPose();
+  drawRuler();
+  if (graphOpen) { drawGraph(); geInfo(); }
+  updateKeyTools();
+  if (msg) say(msg);
+}
+function canMoveSelectedOne(delta) {
+  const frames = sortedTlSel();
+  if (!frames.length) return false;
+  const targets = frames.map((f) => f + delta);
+  if (targets.some((f) => f < FIRST_FRAME || f > LAST_FRAME)) return false;
+  const selSet = new Set(frames);
+  for (const name of CHANNEL_NAMES) {
+    for (const k of channels[name]) {
+      if (targets.includes(k.frame) && !selSet.has(k.frame)) return false;   // a key is in the way
+    }
+  }
+  return true;
+}
+function moveSelectedFramesOne(delta) {
+  const frames = sortedTlSel();
+  const selSet = new Set(frames);
+  for (const name of CHANNEL_NAMES) {
+    for (const k of channels[name]) if (selSet.has(k.frame)) k.frame += delta;
+    sortKeys(name);
+  }
+  tlSelFrames.clear();
+  for (const f of frames) tlSelFrames.add(f + delta);
+  return true;
+}
+function shiftSelectedFrames(delta) {
+  if (!tlSelFrames.size) { say('Pick a key on the timeline first.'); return; }
+  if (!canMoveSelectedOne(Math.sign(delta))) {
+    say('Those keys cannot move that way. A key is in the way, or the scene ends.');
+    return;
+  }
+  pushHistory('Move keys');
+  let moved = 0;
+  while (moved < Math.abs(delta) && canMoveSelectedOne(Math.sign(delta))) {
+    moveSelectedFramesOne(Math.sign(delta));
+    moved++;
+  }
+  const note = moved < Math.abs(delta) ? ' A key stopped the move.' : '';
+  refreshAfterKeyEdit(`Moved keys ${moved} frame${moved > 1 ? 's' : ''} ${delta < 0 ? 'left' : 'right'}.${note}`);
+}
+function deleteTimelineKeys() {
+  if (!tlSelFrames.size) { say('Pick a key on the timeline first.'); return; }
+  pushHistory('Delete keys');
+  let n = 0;
+  for (const name of CHANNEL_NAMES) {
+    const before = channels[name].length;
+    channels[name] = channels[name].filter((k) => !tlSelFrames.has(k.frame));
+    n += before - channels[name].length;
+  }
+  const frames = tlSelFrames.size;
+  tlSelFrames.clear();
+  refreshAfterKeyEdit(`Deleted ${frames} key frame${frames > 1 ? 's' : ''} (${n} channel keys).`);
+}
+function copyTimelineKeys() {
+  if (!tlSelFrames.size) { say('Pick a key on the timeline first.'); return; }
+  const frames = sortedTlSel();
+  const anchor = frames[0];
+  const keys = [];
+  for (const name of CHANNEL_NAMES) {
+    for (const k of channels[name]) {
+      if (!tlSelFrames.has(k.frame)) continue;
+      keys.push({
+        chan: name, off: k.frame - anchor, value: k.value, tangent: k.tangent,
+        ...(typeof k.slopeIn === 'number' ? { slopeIn: k.slopeIn } : {}),
+        ...(typeof k.slopeOut === 'number' ? { slopeOut: k.slopeOut } : {})
+      });
+    }
+  }
+  tlClipboard = { anchor, keys };
+  say(`Copied ${frames.length} key frame${frames.length > 1 ? 's' : ''}. Move the playhead, then press Paste.`);
+}
+function pasteTimelineKeys() {
+  if (!tlClipboard) { say('Copy a key first.'); return; }
+  const dest = currentFrame;
+  if (tlClipboard.keys.some((k) => dest + k.off < FIRST_FRAME || dest + k.off > LAST_FRAME)) {
+    say('Paste would fall outside the scene. Move the playhead and try again.');
+    return;
+  }
+  pushHistory('Paste keys');
+  const pasted = new Set();
+  for (const item of tlClipboard.keys) {
+    const f = dest + item.off;
+    const old = channels[item.chan].find((k) => k.frame === f);
+    if (old) channels[item.chan].splice(channels[item.chan].indexOf(old), 1);   // paste replaces a key in the way
+    const nk = { frame: f, value: item.value, tangent: item.tangent };
+    if (typeof item.slopeIn === 'number') nk.slopeIn = item.slopeIn;
+    if (typeof item.slopeOut === 'number') nk.slopeOut = item.slopeOut;
+    channels[item.chan].push(nk);
+    pasted.add(f);
+  }
+  for (const name of CHANNEL_NAMES) sortKeys(name);
+  tlSelFrames.clear();
+  for (const f of pasted) tlSelFrames.add(f);
+  refreshAfterKeyEdit(`Pasted keys at frame ${dest}.`);
+}
+function rulerKeyHit(e) {
+  const rect = ruler.getBoundingClientRect();
+  const { frameX } = rulerGeom();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  if (py < 30) return null;   // the diamond row lives below the numbers
+  for (const f of keyFrames()) if (Math.abs(px - frameX(f)) <= 9) return f;
+  return null;
+}
 ruler.addEventListener('pointerdown', (e) => {
-  rulerDrag = true; ruler.setPointerCapture(e.pointerId); stopPlay(); setFrame(rulerFrameFromEvent(e));
+  stopPlay();
+  ruler.setPointerCapture(e.pointerId);
+  const hit = rulerKeyHit(e);
+  if (e.button === 1) {
+    // Middle mouse: pick keys and drag them along the ruler.
+    e.preventDefault();
+    if (hit !== null) {
+      if (e.shiftKey) tlSelFrames.add(hit);
+      else if (!tlSelFrames.has(hit)) { tlSelFrames.clear(); tlSelFrames.add(hit); }
+      tlKeyDrag = { lastFrame: hit, historyDone: false };
+      setFrame(hit);
+    }
+    updateKeyTools();
+    return;
+  }
+  if (e.button !== 0) return;
+  if (hit !== null) {
+    if (e.shiftKey) { tlSelFrames.has(hit) ? tlSelFrames.delete(hit) : tlSelFrames.add(hit); }
+    else if (!tlSelFrames.has(hit)) { tlSelFrames.clear(); tlSelFrames.add(hit); }
+    setFrame(hit);
+    updateKeyTools();
+    return;
+  }
+  if (!e.shiftKey) { tlSelFrames.clear(); updateKeyTools(); }
+  rulerDrag = true;
+  setFrame(rulerFrameFromEvent(e));
 });
-ruler.addEventListener('pointermove', (e) => { if (rulerDrag) setFrame(rulerFrameFromEvent(e)); });
-ruler.addEventListener('pointerup', () => { rulerDrag = false; });
+ruler.addEventListener('pointermove', (e) => {
+  if (tlKeyDrag) {
+    let delta = rulerFrameFromEvent(e) - tlKeyDrag.lastFrame;
+    while (delta !== 0) {
+      const step = Math.sign(delta);
+      if (!canMoveSelectedOne(step)) break;
+      if (!tlKeyDrag.historyDone) { pushHistory('Move keys'); tlKeyDrag.historyDone = true; }
+      moveSelectedFramesOne(step);
+      tlKeyDrag.lastFrame += step;
+      delta -= step;
+    }
+    if (tlKeyDrag.historyDone) { setFrame(tlKeyDrag.lastFrame); refreshAfterKeyEdit(); }
+    return;
+  }
+  if (rulerDrag) setFrame(rulerFrameFromEvent(e));
+});
+const endRulerDrag = () => { rulerDrag = false; tlKeyDrag = null; };
+ruler.addEventListener('pointerup', endRulerDrag);
+ruler.addEventListener('pointercancel', endRulerDrag);
+ruler.addEventListener('contextmenu', (e) => e.preventDefault());
+
+$('btnKeyCopy').addEventListener('click', copyTimelineKeys);
+$('btnKeyPaste').addEventListener('click', pasteTimelineKeys);
+$('btnKeyDelete').addEventListener('click', deleteTimelineKeys);
+function keyShiftAmount() {
+  const v = parseInt($('keyShiftAmount').value, 10);
+  return isFinite(v) && v > 0 ? Math.min(v, 480) : 1;
+}
+$('btnKeyLeft').addEventListener('click', () => shiftSelectedFrames(-keyShiftAmount()));
+$('btnKeyRight').addEventListener('click', () => shiftSelectedFrames(keyShiftAmount()));
+$('keyShiftAmount').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
 
 // ---------- Play / stop ----------
 function startPlay() { playing = true; $('btnPlay').innerHTML = '&#10073;&#10073; Pause'; }

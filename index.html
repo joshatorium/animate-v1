@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -126,12 +126,22 @@
       <span id="statusMsg" class="status-msg"></span>
       <span class="tl-spacer"></span>
       <span class="speed-label">Speed 24 fps</span>
+      <span class="key-edit">
+        <span class="key-edit-label">KEYS</span>
+        <span id="keySelInfo">No key picked</span>
+        <button id="btnKeyCopy" class="btn small" title="Copy the picked key frames">Copy</button>
+        <button id="btnKeyPaste" class="btn small" title="Paste copied keys at the playhead">Paste</button>
+        <button id="btnKeyDelete" class="btn small red" title="Delete the picked key frames">Delete</button>
+        <button id="btnKeyLeft" class="btn small" title="Shift picked keys left">&#9664;</button>
+        <input type="number" id="keyShiftAmount" value="1" min="1" step="1" title="Frames to shift">
+        <button id="btnKeyRight" class="btn small" title="Shift picked keys right">&#9654;</button>
+      </span>
       <label class="frames-box">Frames <input type="number" id="sceneLen" value="48" min="12" max="480" step="1"></label>
       <button id="btnGraph" class="btn blue">OPEN GRAPH EDITOR</button>
       <button id="btnPlayblast" class="btn green">&#9679; PLAYBLAST &mdash; Make Movie</button>
     </div>
     <canvas id="ruler"></canvas>
-    <div class="tl-row tl-small"><span>Click the ruler to move the playhead. Orange diamonds are keys.</span></div>
+    <div class="tl-row tl-small"><span>Click the ruler to move the playhead. Orange diamonds are keys. Click a diamond to pick it. Shift+click picks more. Middle-drag moves picked keys.</span></div>
   </footer>
 </div>
 
@@ -215,6 +225,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=18"></script>
+<script type="module" src="app.js?v=19"></script>
 </body>
 </html>

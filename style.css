@@ -308,6 +308,17 @@ body {
 .pb-track { background: #e7dfc8; }
 #pbFill { background: #57a773; }
 
+/* Timeline key tools: copy, paste, delete, and shift. */
+#ruler { touch-action: none; }
+.key-edit { display: flex; align-items: center; gap: 5px; }
+.key-edit-label { color: #d3546b; font-weight: 800; font-size: 13px; letter-spacing: .04em; }
+#keySelInfo { color: #71809c; font-size: 12.5px; min-width: 74px; }
+.key-edit input {
+  width: 52px; background: #ffffff; color: #2e3d5c;
+  border: 2px solid #3c4a63; border-radius: 6px; padding: 2px 4px;
+}
+.key-edit input:focus { outline: 2px solid #f0a13a; border-color: #f0a13a; }
+
 /* Tutorial walkthrough: a paper card that guides without blocking. */
 #tutorialCard {
   position: fixed; left: 92px; bottom: 126px; z-index: 60;
