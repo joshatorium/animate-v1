@@ -42,8 +42,8 @@ let ghostAhead = 3;   // ghosts after this frame (blue)
 let ghostBehind = 3;  // ghosts before this frame (red)
 let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
-let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs
-const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1 };
+let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs, 4 Pendulum
+const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1, armLength: 3.2 };
 
 // ---------- Data core: channels and keys ----------
 // A channel is a list of keys: { frame, value, tangent }.
@@ -199,6 +199,7 @@ function undo() {
   $('sldTailLen').value = sliders.tailLength;
   $('sldTailBend').value = sliders.tailBend;
   $('sldLegLen').value = sliders.legLength;
+  $('sldArmLen').value = sliders.armLength;
   setTemplate(item.state.template);   // rebuilds the rig and applies the pose
   setSceneLength(item.state.frames || 48);
   drawRuler();
@@ -429,6 +430,14 @@ let tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
 let tailCtrlMeshes = [];      // the ring meshes in the 3D view
 let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
+let headGroup = null; // the pendulum head group (template 4)
+let armLen = 3.2;     // the pendulum rod length, from the slider
+const _gPivot = new THREE.Vector3();
+const _gOff = new THREE.Vector3();
+const _gEuler = new THREE.Euler();
+// The height of the group origin when Move Y is 0: the ball
+// center on ball rigs, the pivot on the pendulum.
+function restLift() { return template === 4 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
 let ballRadius = 0.9, legClear = 0;
 
 // Sketch look, after the user's pencil-sphere sketch:
@@ -541,10 +550,17 @@ scene.add(sketchShadow);
 function updateSketchShadow() {
   if (!charGroup) { sketchShadow.visible = false; return; }
   sketchShadow.visible = true;
-  const h = Math.max(0, livePose.moveY);   // height above the rest pose
+  let hx = charGroup.position.x, hz = charGroup.position.z;
+  let h = Math.max(0, livePose.moveY);   // height above the rest pose
+  if (template === 4 && ballMesh) {
+    // The pendulum shadow sits under the ball, not the pivot.
+    ballMesh.getWorldPosition(_gPivot);
+    hx = _gPivot.x; hz = _gPivot.z;
+    h = Math.max(0, _gPivot.y - ballRadius);
+  }
   const shrink = clamp(1.18 - h * 0.13, 0.55, 1.18);
-  sketchShadow.position.x = charGroup.position.x - 0.38 * ballRadius;
-  sketchShadow.position.z = charGroup.position.z - 0.22 * ballRadius;
+  sketchShadow.position.x = hx - 0.38 * ballRadius;
+  sketchShadow.position.z = hz - 0.22 * ballRadius;
   sketchShadow.scale.set(
     3.4 * ballRadius * shrink * Math.max(livePose.scaleX, 0.4),
     1.5 * ballRadius * shrink, 1);
@@ -657,6 +673,33 @@ function buildRig() {
     legR = mkLeg('LegR', -ballRadius * 0.42);
   }
 
+  headGroup = null;
+  if (template === 4) {
+    // Pendulum (Basic): a pivot mount, a rod, and the ball
+    // on the end. The group origin is the pivot, so the
+    // Rotate tool swings the ball on its arc.
+    armLen = sliders.armLength;
+    const mount = new THREE.Mesh(unitSphere, sketchMat);
+    mount.name = 'PivotMount';
+    mount.scale.setScalar(0.17);
+    addOutline(mount, 1.05);
+    charGroup.add(mount);
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), sketchMat);
+    pin.name = 'PivotPin';
+    pin.rotation.z = Math.PI / 2;
+    charGroup.add(pin);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 10), sketchMat);
+    rod.name = 'Rod';
+    rod.position.y = -armLen / 2;
+    charGroup.add(rod);
+    headGroup = new THREE.Group();
+    headGroup.name = 'PendulumBall';
+    headGroup.position.y = -armLen;
+    charGroup.remove(ballMesh);
+    headGroup.add(ballMesh);
+    charGroup.add(headGroup);
+  }
+
   // Ghost pool: up to 8 ghosts per side. Each ghost gets
   // its own material, so near ghosts can draw darker
   // than far ghosts.
@@ -684,11 +727,17 @@ function applyPose() {
   const p = livePose;
   // The group origin IS the ball center. moveY 0 = the ball rests on
   // the ground (or on its legs), so the center sits one radius up.
-  charGroup.position.set(p.moveX, legClear + ballRadius + p.moveY, p.moveZ);
+  charGroup.position.set(p.moveX, restLift() + p.moveY, p.moveZ);
   charGroup.rotation.set(rad(p.rotateX), rad(p.rotateY), rad(p.rotateZ));
   // Squash grows and shrinks around the center. The center does not move.
   ballMesh.position.y = 0;
-  ballMesh.scale.set(ballRadius * p.scaleX, ballRadius * p.scaleY, ballRadius * p.scaleZ);
+  if (template === 4 && headGroup) {
+    // Pendulum squash lives on the head group, so the rod stays rigid.
+    headGroup.scale.set(p.scaleX, p.scaleY, p.scaleZ);
+    ballMesh.scale.setScalar(ballRadius);
+  } else {
+    ballMesh.scale.set(ballRadius * p.scaleX, ballRadius * p.scaleY, ballRadius * p.scaleZ);
+  }
   if (tailRoot) {
     tailRoot.position.set(ballRadius * 0.72, ballRadius * 0.3, 0);
     // The Tail bend slider is a soft base curl, spread over all joints.
@@ -722,11 +771,18 @@ function updateGhosts() {
     const t = limit > 1 ? (g.idx - 1) / (limit - 1) : 0;
     mesh.material.opacity = 0.5 + (0.08 - 0.5) * t;
     const gp = evalAll(f);
-    mesh.position.set(
-      gp.moveX,
-      gp.moveY + legClear + ballRadius,
-      gp.moveZ
-    );
+    if (template === 4) {
+      // The ghost ball hangs at the end of the rod.
+      _gPivot.set(gp.moveX, restLift() + gp.moveY, gp.moveZ);
+      _gOff.set(0, -armLen, 0).applyEuler(_gEuler.set(rad(gp.rotateX), rad(gp.rotateY), rad(gp.rotateZ)));
+      mesh.position.copy(_gPivot).add(_gOff);
+    } else {
+      mesh.position.set(
+        gp.moveX,
+        gp.moveY + restLift(),
+        gp.moveZ
+      );
+    }
     mesh.scale.set(ballRadius * gp.scaleX, ballRadius * gp.scaleY, ballRadius * gp.scaleZ);
   }
 }
@@ -781,7 +837,7 @@ tc.addEventListener('objectChange', () => {
   } else {
     livePose.moveX = charGroup.position.x;
     // The group sits at the ball center: take the rest height back off.
-    livePose.moveY = charGroup.position.y - (legClear + ballRadius);
+    livePose.moveY = charGroup.position.y - restLift();
     livePose.moveZ = charGroup.position.z;
     livePose.rotateX = charGroup.rotation.x * 180 / Math.PI;
     livePose.rotateY = charGroup.rotation.y * 180 / Math.PI;
@@ -1323,13 +1379,14 @@ const sliderBurst = {};
 function noteSliderStart(id, label) {
   if (!sliderBurst[id]) { pushHistory(label); sliderBurst[id] = true; }
 }
-for (const id of ['sldSize', 'sldTailLen', 'sldTailBend', 'sldLegLen']) {
+for (const id of ['sldSize', 'sldTailLen', 'sldTailBend', 'sldLegLen', 'sldArmLen']) {
   $(id).addEventListener('change', () => { sliderBurst[id] = false; });
 }
 $('sldSize').addEventListener('input', (e) => { noteSliderStart('sldSize', 'Ball size'); sliders.ballSize = Number(e.target.value); buildRig(); });
 $('sldTailLen').addEventListener('input', (e) => { noteSliderStart('sldTailLen', 'Tail length'); sliders.tailLength = Number(e.target.value); buildRig(); });
 $('sldTailBend').addEventListener('input', (e) => { noteSliderStart('sldTailBend', 'Tail bend'); sliders.tailBend = Number(e.target.value); applyPose(); });
 $('sldLegLen').addEventListener('input', (e) => { noteSliderStart('sldLegLen', 'Leg length'); sliders.legLength = Number(e.target.value); buildRig(); });
+$('sldArmLen').addEventListener('input', (e) => { noteSliderStart('sldArmLen', 'Arm length'); sliders.armLength = Number(e.target.value); buildRig(); });
 
 // ---------- Save / Open project JSON ----------
 function projectData() {
@@ -1381,9 +1438,10 @@ $('openFile').addEventListener('change', async (e) => {
     $('sldTailLen').value = sliders.tailLength;
     $('sldTailBend').value = sliders.tailBend;
     $('sldLegLen').value = sliders.legLength;
+    $('sldArmLen').value = sliders.armLength;
     if (data.frames) setSceneLength(data.frames);
     stopPlay();
-    setTemplate([1, 2, 3].includes(data.template) ? data.template : 2);
+    setTemplate([1, 2, 3, 4].includes(data.template) ? data.template : 2);
     setFrame(FIRST_FRAME);
     say('Project opened.');
   } catch (err) {

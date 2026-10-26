@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=31">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -36,6 +36,7 @@
         <option value="1">Lesson 1</option>
         <option value="2" selected>Lesson 2</option>
         <option value="3">Lesson 3</option>
+        <option value="4">Pendulum</option>
       </select>
     </div>
   </header>
@@ -82,6 +83,7 @@
         <button class="tpl-btn" data-tpl="1">1&ensp;Ball</button>
         <button class="tpl-btn active" data-tpl="2">2&ensp;Ball + Tail</button>
         <button class="tpl-btn" data-tpl="3">3&ensp;Ball + Legs</button>
+        <button class="tpl-btn" data-tpl="4">4&ensp;Pendulum</button>
         <div class="panel-subtitle">Sliders</div>
         <label class="slider-row">Ball size
           <input type="range" id="sldSize" min="0.5" max="2" step="0.05" value="1">
@@ -94,6 +96,9 @@
         </label>
         <label class="slider-row">Leg length
           <input type="range" id="sldLegLen" min="0.4" max="2" step="0.05" value="1">
+        </label>
+        <label class="slider-row">Arm length
+          <input type="range" id="sldArmLen" min="1.5" max="6" step="0.1" value="3.2">
         </label>
         <button id="btnBuildRig" class="btn green big">BUILD RIG</button>
       </div>
@@ -235,6 +240,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=30"></script>
+<script type="module" src="app.js?v=31"></script>
 </body>
 </html>
