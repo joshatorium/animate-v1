@@ -1579,6 +1579,19 @@ function drawGraph() {
       gctx.lineWidth = 1;
     }
   }
+  // Playhead: a rose line at the current frame, synced with
+  // the timeline ruler. setFrame redraws the graph on every
+  // frame change, so the line tracks scrubbing and play.
+  if (currentFrame >= g.f0 && currentFrame <= g.f1) {
+    const px = g.x(currentFrame);
+    gctx.strokeStyle = '#d3546b'; gctx.lineWidth = 2;
+    gctx.beginPath(); gctx.moveTo(px, g.padT); gctx.lineTo(px, h - 26); gctx.stroke();
+    gctx.lineWidth = 1;
+    gctx.fillStyle = '#d3546b';
+    gctx.beginPath();
+    gctx.moveTo(px - 6, g.padT); gctx.lineTo(px + 6, g.padT); gctx.lineTo(px, g.padT + 9);
+    gctx.closePath(); gctx.fill();
+  }
   // Bezier handles on the active key: two lines with square ends.
   // Drag an end to change the slope on that side of the key.
   geHandles = null;
