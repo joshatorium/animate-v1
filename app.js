@@ -432,7 +432,8 @@ let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
 let headGroup = null; // the pendulum head group (template 4)
 let armLen = 3.2;     // the pendulum arm length, from the slider
-let pendJoints = [];  // the two pendulum arm joints (template 4)
+let pendJoints = [];  // the pendulum arm joints (template 4)
+let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
 const _gEuler = new THREE.Euler();
@@ -589,6 +590,7 @@ function disposeGroup(g) {
 
 function buildRig() {
   if (charGroup) { scene.remove(charGroup); disposeGroup(charGroup); }
+  if (pendMount) { scene.remove(pendMount); disposeGroup(pendMount); pendMount = null; }
   for (const g of ghostPool) { scene.remove(g.mesh); g.mesh.material.dispose(); }
   ghostPool = [];
   charGroup = new THREE.Group();
@@ -703,11 +705,16 @@ function buildRig() {
     // The disc has a fixed size: the Ball size slider
     // sizes the ball only, never the disc or the arm.
     // No outline shell on the disc: no black ring around it.
+    // The disc lives in its own mount group, outside the
+    // swing group: the pivot turns the arm, never the disc.
+    pendMount = new THREE.Group();
+    pendMount.name = 'PendulumMount';
     const disc = new THREE.Mesh(
       new THREE.CylinderGeometry(1.3, 1.3, 0.12, 28), sketchMat);
     disc.name = 'TopDisc';
     disc.position.y = 0.14;
-    charGroup.add(disc);
+    pendMount.add(disc);
+    scene.add(pendMount);
     const mount = new THREE.Mesh(unitSphere, sketchMat);
     mount.name = 'PivotMount';
     mount.scale.setScalar(0.15);
@@ -792,6 +799,8 @@ function applyPose() {
   // the ground (or on its legs), so the center sits one radius up.
   charGroup.position.set(p.moveX, restLift() + p.moveY, p.moveZ);
   charGroup.rotation.set(rad(p.rotateX), rad(p.rotateY), rad(p.rotateZ));
+  // The disc mount follows the pivot point but never turns.
+  if (pendMount) pendMount.position.copy(charGroup.position);
   // Squash grows and shrinks around the center. The center does not move.
   ballMesh.position.y = 0;
   if (template === 4 && headGroup) {
