@@ -42,7 +42,7 @@ let ghostAhead = 3;   // ghosts after this frame (blue)
 let ghostBehind = 3;  // ghosts before this frame (red)
 let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
-let template = 2;            // 1 Ball, 2 Ball+Tail, 3 Ball+Legs, 4 Pendulum
+let template = 3;            // 1 Ball, 2 Pendulum, 3 Ball+Tail, 4 Ball+Legs
 const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1, armLength: 3.2 };
 
 // ---------- Data core: channels and keys ----------
@@ -428,11 +428,24 @@ tc.setMode('translate');
 let charGroup = null, ballMesh = null, tailRoot = null, tailJoints = [], legL = null, legR = null;
 let tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
 let tailCtrlMeshes = [];      // the ring meshes in the 3D view
+// Invisible fat hit rings make the thin controller rings
+// easy to click: the pick raycast tests these fat rings,
+// not the thin art rings.
+const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+function addHitRing(parent, radius, tube, rotAxis, userData) {
+  const hit = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 8, 24), hitMat);
+  if (rotAxis === 'x') hit.rotation.x = Math.PI / 2;
+  if (rotAxis === 'y') hit.rotation.y = Math.PI / 2;
+  Object.assign(hit.userData, userData);
+  parent.add(hit);
+  tailCtrlMeshes.push(hit);
+  return hit;
+}
 let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
-let headGroup = null; // the pendulum head group (template 4)
+let headGroup = null; // the pendulum head group (template 2)
 let armLen = 3.2;     // the pendulum arm length, from the slider
-let pendJoints = [];  // the pendulum arm joints (template 4)
+let pendJoints = [];  // the pendulum arm joints (template 2)
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
@@ -446,14 +459,14 @@ function pendSegLens() { const L = sliders.armLength; return [L * 0.30, L * 0.27
 // Display name for a channel: on the pendulum, the three
 // tail channels drive the three arm joints.
 function chanLabel(name) {
-  if (template === 4 && name === 'tail1') return 'Joint 1';
-  if (template === 4 && name === 'tail2') return 'Joint 2';
-  if (template === 4 && name === 'tail3') return 'Joint 3';
+  if (template === 2 && name === 'tail1') return 'Joint 1';
+  if (template === 2 && name === 'tail2') return 'Joint 2';
+  if (template === 2 && name === 'tail3') return 'Joint 3';
   return CHAN_LABEL[name];
 }
 // The height of the group origin when Move Y is 0: the ball
 // center on ball rigs, the pivot on the pendulum.
-function restLift() { return template === 4 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
+function restLift() { return template === 2 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
 let ballRadius = 0.9, legClear = 0;
 
 // Sketch look, after the user's pencil-sphere sketch:
@@ -568,7 +581,7 @@ function updateSketchShadow() {
   sketchShadow.visible = true;
   let hx = charGroup.position.x, hz = charGroup.position.z;
   let h = Math.max(0, livePose.moveY);   // height above the rest pose
-  if (template === 4 && ballMesh) {
+  if (template === 2 && ballMesh) {
     // The pendulum shadow sits under the ball, not the pivot.
     ballMesh.getWorldPosition(_gPivot);
     hx = _gPivot.x; hz = _gPivot.z;
@@ -596,7 +609,7 @@ function buildRig() {
   charGroup = new THREE.Group();
   charGroup.name = 'BallControl';
   ballRadius = 0.9 * sliders.ballSize;
-  legClear = template === 3 ? sliders.legLength * 0.85 : 0;
+  legClear = template === 4 ? sliders.legLength * 0.85 : 0;
 
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
   ballMesh.name = 'Ball';
@@ -616,7 +629,7 @@ function buildRig() {
   tailJoints = []; tailRoot = null; legL = null; legR = null;
   tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
   tailCtrlMeshes = [];
-  if (template === 2) {
+  if (template === 3) {
     // A chain of small spheres. Each joint bends a little.
     const count = Math.round(sliders.tailLength);
     const segLen = ballRadius * 0.55;
@@ -667,9 +680,10 @@ function buildRig() {
       twin.position.x = 0.02;
       joint.add(twin);
       tailCtrlMeshes.push(ring);
+      addHitRing(joint, r, 0.13, 'y', { ctrl: name });
     }
   }
-  if (template === 3) {
+  if (template === 4) {
     // Two simple legs under the ball.
     const legLen = sliders.legLength * 0.85;
     const mkLeg = (name, z) => {
@@ -691,7 +705,7 @@ function buildRig() {
   }
 
   headGroup = null; pendJoints = [];
-  if (template === 4) {
+  if (template === 2) {
     // Pendulum (Basic), after the Ultimate Pendulum rig:
     // a flat disc on top, a segmented arm with three ball
     // joints, and the ball on the end. The group origin is
@@ -715,10 +729,30 @@ function buildRig() {
     disc.position.y = 0.14;
     pendMount.add(disc);
     scene.add(pendMount);
+    // Disc controller: an orange ring around the disc.
+    // Click it to pick the pivot and move the whole rig.
+    const discRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.48, 0.04, 10, 44),
+      new THREE.MeshBasicMaterial({ color: 0xe07b39 })
+    );
+    discRing.rotation.x = Math.PI / 2;
+    discRing.position.y = 0.14;
+    pendMount.add(discRing);
+    const discHit = addHitRing(pendMount, 1.48, 0.17, 'x', { ctrl: 'ball', tool: 'move', label: 'disc' });
+    discHit.position.y = 0.14;
     const mount = new THREE.Mesh(unitSphere, sketchMat);
     mount.name = 'PivotMount';
     mount.scale.setScalar(0.15);
     charGroup.add(mount);
+    // Top arm controller: a blue ring around the arm at
+    // the pivot. Click it to pick the swing and rotate.
+    const pivotRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.32, 0.04, 10, 28),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR.rotateZ) })
+    );
+    pivotRing.rotation.x = Math.PI / 2;
+    charGroup.add(pivotRing);
+    addHitRing(charGroup, 0.32, 0.17, 'x', { ctrl: 'ball', tool: 'rotate', label: 'pivot' });
     const mkSeg = (len, r) => {
       const seg = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), sketchMat);
       seg.position.y = -len / 2;
@@ -761,6 +795,7 @@ function buildRig() {
       twin.position.y = 0.02;
       j.add(twin);
       tailCtrlMeshes.push(ring);
+      addHitRing(j, 0.19, 0.15, 'x', { ctrl: name });
     }
     headGroup = new THREE.Group();
     headGroup.name = 'PendulumBall';
@@ -803,7 +838,7 @@ function applyPose() {
   if (pendMount) pendMount.position.copy(charGroup.position);
   // Squash grows and shrinks around the center. The center does not move.
   ballMesh.position.y = 0;
-  if (template === 4 && headGroup) {
+  if (template === 2 && headGroup) {
     // Pendulum squash lives on the head group, so the rod stays rigid.
     headGroup.scale.set(p.scaleX, p.scaleY, p.scaleZ);
     ballMesh.scale.setScalar(ballRadius);
@@ -823,7 +858,7 @@ function applyPose() {
       if (j) j.rotation.z = each + rad(p[name]);
     }
   }
-  if (template === 4 && pendJoints.length) {
+  if (template === 2 && pendJoints.length) {
     // The arm joints bend in the swing plane (rotation z).
     pendJoints[0].rotation.z = rad(p.tail1);
     pendJoints[1].rotation.z = rad(p.tail2);
@@ -849,7 +884,7 @@ function updateGhosts() {
     const t = limit > 1 ? (g.idx - 1) / (limit - 1) : 0;
     mesh.material.opacity = 0.5 + (0.08 - 0.5) * t;
     const gp = evalAll(f);
-    if (template === 4) {
+    if (template === 2) {
       // The ghost ball hangs at the end of the jointed arm:
       // walk the chain — pivot swing, then each joint bend.
       const [s1, s2, s3, s4] = pendSegLens();
@@ -975,7 +1010,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   );
   raycaster.setFromCamera(nd, camera);
   const ringHits = raycaster.intersectObjects(tailCtrlMeshes, false);
-  if (ringHits.length) { selectControl(ringHits[0].object.userData.ctrl); return; }
+  if (ringHits.length) {
+    const u = ringHits[0].object.userData;
+    selectControl(u.ctrl);
+    if (u.tool) setTool(u.tool);
+    if (u.label === 'disc') say('Disc picked. Drag the Move arrows (W) to move the whole rig.');
+    if (u.label === 'pivot') say('Top arm picked. Drag the round Rotate arrows (E) to swing the arm.');
+    return;
+  }
   const rigHits = raycaster.intersectObject(charGroup, true);
   if (rigHits.length && selectedCtrl !== 'ball') selectControl('ball');
 });
@@ -1478,7 +1520,7 @@ $('sldArmLen').addEventListener('input', (e) => { noteSliderStart('sldArmLen', '
 // ---------- Save / Open project JSON ----------
 function projectData() {
   return {
-    app: 'ANIMATE', version: 1, name: SCENE_NAME,
+    app: 'ANIMATE', version: 1, name: SCENE_NAME, rigOrder: 2,
     template, sliders: { ...sliders }, channels, frames: LAST_FRAME
   };
 }
@@ -1528,7 +1570,14 @@ $('openFile').addEventListener('change', async (e) => {
     $('sldArmLen').value = sliders.armLength;
     if (data.frames) setSceneLength(data.frames);
     stopPlay();
-    setTemplate([1, 2, 3, 4].includes(data.template) ? data.template : 2);
+    // Rig numbers changed order on 2026-10-26 (1 Ball,
+    // 2 Pendulum, 3 Ball+Tail, 4 Ball+Legs). Files saved
+    // before that carry no rigOrder mark: remap their
+    // old numbers (2 Tail, 3 Legs, 4 Pendulum).
+    const tpl = data.rigOrder === 2
+      ? data.template
+      : ({ 1: 1, 2: 3, 3: 4, 4: 2 })[data.template];
+    setTemplate([1, 2, 3, 4].includes(tpl) ? tpl : 3);
     setFrame(FIRST_FRAME);
     say('Project opened.');
   } catch (err) {
@@ -2441,13 +2490,13 @@ const TUT_STEPS = [
   {
     title: 'Next rig: Ball + Tail',
     text: 'The tail adds overlap. The tail follows the ball a beat late.',
-    task: 'Click 2 Ball + Tail. Then click BUILD RIG.',
+    task: 'Click 3 Ball + Tail. Then click BUILD RIG.',
     target: '#rigPanel',
-    done: () => template === 2,
+    done: () => template === 3,
     actionLabel: 'Help me',
     action: () => {
-      if (template !== 2) pushHistory('Change rig');
-      setTemplate(2);
+      if (template !== 3) pushHistory('Change rig');
+      setTemplate(3);
       buildRig();
       say('Ball + Tail rig ready.');
     }
