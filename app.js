@@ -361,7 +361,7 @@ function frameViewport() {
   if (selectedCtrl !== 'ball' && tailCtrlJoints[selectedCtrl]) {
     center = new THREE.Vector3();
     tailCtrlJoints[selectedCtrl].getWorldPosition(center);
-    label = CHAN_LABEL[selectedCtrl];
+    label = chanLabel(selectedCtrl);
   } else {
     center = charGroup.position.clone();   // the ball center
     label = 'the ball';
@@ -431,10 +431,23 @@ let tailCtrlMeshes = [];      // the ring meshes in the 3D view
 let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
 let headGroup = null; // the pendulum head group (template 4)
-let armLen = 3.2;     // the pendulum rod length, from the slider
+let armLen = 3.2;     // the pendulum arm length, from the slider
+let pendJoints = [];  // the two pendulum arm joints (template 4)
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
 const _gEuler = new THREE.Euler();
+const _m = new THREE.Matrix4();
+const _m2 = new THREE.Matrix4();
+// The pendulum arm has three segments: pivot to Joint 1,
+// Joint 1 to Joint 2, and Joint 2 to the ball.
+function pendSegLens() { const L = sliders.armLength; return [L * 0.38, L * 0.34, L * 0.28]; }
+// Display name for a channel: on the pendulum, the first
+// two tail channels drive the arm joints.
+function chanLabel(name) {
+  if (template === 4 && name === 'tail1') return 'Joint 1';
+  if (template === 4 && name === 'tail2') return 'Joint 2';
+  return CHAN_LABEL[name];
+}
 // The height of the group origin when Move Y is 0: the ball
 // center on ball rigs, the pivot on the pendulum.
 function restLift() { return template === 4 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
@@ -673,31 +686,74 @@ function buildRig() {
     legR = mkLeg('LegR', -ballRadius * 0.42);
   }
 
-  headGroup = null;
+  headGroup = null; pendJoints = [];
   if (template === 4) {
-    // Pendulum (Basic): a pivot mount, a rod, and the ball
-    // on the end. The group origin is the pivot, so the
-    // Rotate tool swings the ball on its arc.
+    // Pendulum (Basic), after the Ultimate Pendulum rig:
+    // a flat disc on top, a segmented arm with two ball
+    // joints, and the ball on the end. The group origin is
+    // the pivot under the disc, so the Rotate tool swings
+    // the whole arm. The joints bend for follow through:
+    // Joint 1 rides the Tail 1 channel and Joint 2 rides
+    // Tail 2, so the rings, the graph, and Set Key all
+    // work on them just like the tail controllers.
     armLen = sliders.armLength;
+    const [s1, s2, s3] = pendSegLens();
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.15 * ballRadius + 0.25, 1.15 * ballRadius + 0.25, 0.12, 28), sketchMat);
+    disc.name = 'TopDisc';
+    disc.position.y = 0.14;
+    addOutline(disc, 1.03);
+    charGroup.add(disc);
     const mount = new THREE.Mesh(unitSphere, sketchMat);
     mount.name = 'PivotMount';
-    mount.scale.setScalar(0.17);
-    addOutline(mount, 1.05);
+    mount.scale.setScalar(0.15);
     charGroup.add(mount);
-    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), sketchMat);
-    pin.name = 'PivotPin';
-    pin.rotation.z = Math.PI / 2;
-    charGroup.add(pin);
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 10), sketchMat);
-    rod.name = 'Rod';
-    rod.position.y = -armLen / 2;
-    charGroup.add(rod);
+    const mkSeg = (len, r) => {
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), sketchMat);
+      seg.position.y = -len / 2;
+      return seg;
+    };
+    charGroup.add(mkSeg(s1, 0.05));
+    const mkJoint = (name, drop, segLen, segR) => {
+      const j = new THREE.Group();
+      j.name = name;
+      j.position.y = -drop;
+      const ball = new THREE.Mesh(unitSphere, sketchMat);
+      ball.scale.setScalar(0.115);
+      addOutline(ball, 1.05);
+      j.add(ball);
+      j.add(mkSeg(segLen, segR));
+      return j;
+    };
+    const j1 = mkJoint('Joint1', s1, s2, 0.045);
+    charGroup.add(j1);
+    const j2 = mkJoint('Joint2', s2, s3, 0.04);
+    j1.add(j2);
+    pendJoints = [j1, j2];
+    tailCtrlJoints.tail1 = j1;
+    tailCtrlJoints.tail2 = j2;
+    // Control rings on the joints, like the tail rings.
+    for (const [j, name] of [[j1, 'tail1'], [j2, 'tail2']]) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.19, 0.03, 10, 28),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
+      );
+      ring.rotation.x = Math.PI / 2;   // the ring lies around the arm
+      ring.userData.ctrl = name;
+      j.add(ring);
+      const twin = new THREE.Mesh(ring.geometry, ring.material);
+      twin.rotation.set(Math.PI / 2 + 0.07, 0, 0);
+      twin.scale.setScalar(1.12);
+      twin.position.y = 0.02;
+      j.add(twin);
+      tailCtrlMeshes.push(ring);
+    }
     headGroup = new THREE.Group();
     headGroup.name = 'PendulumBall';
-    headGroup.position.y = -armLen;
+    headGroup.position.y = -s3;
     charGroup.remove(ballMesh);
     headGroup.add(ballMesh);
-    charGroup.add(headGroup);
+    j2.add(headGroup);
   }
 
   // Ghost pool: up to 8 ghosts per side. Each ghost gets
@@ -751,6 +807,11 @@ function applyPose() {
       if (j) j.rotation.z = each + rad(p[name]);
     }
   }
+  if (template === 4 && pendJoints.length) {
+    // The arm joints bend in the swing plane (rotation z).
+    pendJoints[0].rotation.z = rad(p.tail1);
+    pendJoints[1].rotation.z = rad(p.tail2);
+  }
   if (legL) { legL.rotation.z = p.legStep; legR.rotation.z = -p.legStep; }
   updateGhosts();
   updateSettings();
@@ -772,10 +833,17 @@ function updateGhosts() {
     mesh.material.opacity = 0.5 + (0.08 - 0.5) * t;
     const gp = evalAll(f);
     if (template === 4) {
-      // The ghost ball hangs at the end of the rod.
-      _gPivot.set(gp.moveX, restLift() + gp.moveY, gp.moveZ);
-      _gOff.set(0, -armLen, 0).applyEuler(_gEuler.set(rad(gp.rotateX), rad(gp.rotateY), rad(gp.rotateZ)));
-      mesh.position.copy(_gPivot).add(_gOff);
+      // The ghost ball hangs at the end of the jointed arm:
+      // walk the chain — pivot swing, Joint 1 bend, Joint 2 bend.
+      const [s1, s2, s3] = pendSegLens();
+      _m.makeRotationFromEuler(_gEuler.set(rad(gp.rotateX), rad(gp.rotateY), rad(gp.rotateZ)));
+      _m.setPosition(gp.moveX, restLift() + gp.moveY, gp.moveZ);
+      _m2.makeTranslation(0, -s1, 0); _m.multiply(_m2);
+      _m2.makeRotationZ(rad(gp.tail1)); _m.multiply(_m2);
+      _m2.makeTranslation(0, -s2, 0); _m.multiply(_m2);
+      _m2.makeRotationZ(rad(gp.tail2)); _m.multiply(_m2);
+      _m2.makeTranslation(0, -s3, 0); _m.multiply(_m2);
+      mesh.position.setFromMatrixPosition(_m);
     } else {
       mesh.position.set(
         gp.moveX,
@@ -869,7 +937,7 @@ function selectControl(name) {
   if (name === 'ball') {
     say('Ball picked.');
   } else {
-    say(`${CHAN_LABEL[name]} picked. Use the Rotate tool (E) and drag the round arrows.`);
+    say(`${chanLabel(name)} picked. Use the Rotate tool (E) and drag the round arrows.`);
     if (activeTool === 'move' || activeTool === 'scale') setTool('rotate');
   }
   if (activeTool !== 'select') {
@@ -1517,7 +1585,7 @@ function buildGeChannelList() {
     for (const name of names) {
       const b = document.createElement('button');
       b.className = 'ge-chan' + (geSelected.has(name) ? ' active' : '');
-      b.innerHTML = `<span class="ge-dot" style="background:${CHAN_COLOR[name]}"></span>${CHAN_LABEL[name]}`;
+      b.innerHTML = `<span class="ge-dot" style="background:${CHAN_COLOR[name]}"></span>${chanLabel(name)}`;
       b.addEventListener('click', (e) => {
         if (e.shiftKey) {
           // Shift+click: add this curve to the pick, or take it out.
@@ -1683,7 +1751,7 @@ function drawGraph() {
     gctx.lineWidth = 1;
   }
   $('geChanName').textContent = geSelected.size === 1
-    ? CHAN_LABEL[geChannel]
+    ? chanLabel(geChannel)
     : `${geSelected.size} curves picked`;
 }
 function geInfo() {
@@ -1705,7 +1773,7 @@ function geInfo() {
   if (document.activeElement !== vi) vi.value = fmt(geSelectedKey.value);
   el.textContent =
     (geSelKeys.length > 1 ? `${geSelKeys.length} keys picked. ` : '') +
-    `Picked key — Channel ${CHAN_LABEL[geKeyChannel]} • Frame ${geSelectedKey.frame} • ` +
+    `Picked key — Channel ${chanLabel(geKeyChannel)} • Frame ${geSelectedKey.frame} • ` +
     `Value ${fmt(geSelectedKey.value)} • Tangent ${geSelectedKey.tangent}. ` +
     'Drag a square handle: pull in or out for length, up or down for slope. ' +
     'Press Delete to remove the picked keys.';
@@ -1723,7 +1791,7 @@ function deletePickedKey() {
     const i = arr.indexOf(key);
     if (i >= 0) arr.splice(i, 1);
   }
-  say(n > 1 ? `${n} keys removed.` : `Key removed — ${CHAN_LABEL[first.chan]} frame ${first.key.frame}.`);
+  say(n > 1 ? `${n} keys removed.` : `Key removed — ${chanLabel(first.chan)} frame ${first.key.frame}.`);
   geSelKeys = [];
   geSelectedKey = null;
   geDrag = null;
