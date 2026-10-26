@@ -43,7 +43,7 @@ let ghostBehind = 3;  // ghosts before this frame (red)
 let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
 let template = 3;            // 1 Ball, 2 Pendulum, 3 Ball+Tail, 4 Ball+Legs
-const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1, armLength: 3.2 };
+const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1, armLength: 4.4 };
 
 // ---------- Data core: channels and keys ----------
 // A channel is a list of keys: { frame, value, tangent }.
@@ -444,7 +444,7 @@ function addHitRing(parent, radius, tube, rotAxis, userData) {
 let selectedCtrl = 'ball';    // 'ball' or a tail channel name
 let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
 let headGroup = null; // the pendulum head group (template 2)
-let armLen = 3.2;     // the pendulum arm length, from the slider
+let armLen = 4.4;     // the pendulum arm length, from the slider
 let pendJoints = [];  // the pendulum arm joints (template 2)
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
@@ -455,7 +455,7 @@ const _m2 = new THREE.Matrix4();
 // The pendulum arm has four segments and three joints:
 // pivot to Joint 1, Joint 1 to Joint 2, Joint 2 to
 // Joint 3, and Joint 3 to the ball.
-function pendSegLens() { const L = sliders.armLength; return [L * 0.30, L * 0.27, L * 0.23, L * 0.20]; }
+function pendSegLens() { const L = sliders.armLength; return [L * 0.26, L * 0.25, L * 0.24, L * 0.25]; }
 // Display name for a channel: on the pendulum, the three
 // tail channels drive the three arm joints.
 function chanLabel(name) {
