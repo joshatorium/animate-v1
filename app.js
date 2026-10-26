@@ -438,14 +438,16 @@ const _gOff = new THREE.Vector3();
 const _gEuler = new THREE.Euler();
 const _m = new THREE.Matrix4();
 const _m2 = new THREE.Matrix4();
-// The pendulum arm has three segments: pivot to Joint 1,
-// Joint 1 to Joint 2, and Joint 2 to the ball.
-function pendSegLens() { const L = sliders.armLength; return [L * 0.38, L * 0.34, L * 0.28]; }
-// Display name for a channel: on the pendulum, the first
-// two tail channels drive the arm joints.
+// The pendulum arm has four segments and three joints:
+// pivot to Joint 1, Joint 1 to Joint 2, Joint 2 to
+// Joint 3, and Joint 3 to the ball.
+function pendSegLens() { const L = sliders.armLength; return [L * 0.30, L * 0.27, L * 0.23, L * 0.20]; }
+// Display name for a channel: on the pendulum, the three
+// tail channels drive the three arm joints.
 function chanLabel(name) {
   if (template === 4 && name === 'tail1') return 'Joint 1';
   if (template === 4 && name === 'tail2') return 'Joint 2';
+  if (template === 4 && name === 'tail3') return 'Joint 3';
   return CHAN_LABEL[name];
 }
 // The height of the group origin when Move Y is 0: the ball
@@ -689,20 +691,22 @@ function buildRig() {
   headGroup = null; pendJoints = [];
   if (template === 4) {
     // Pendulum (Basic), after the Ultimate Pendulum rig:
-    // a flat disc on top, a segmented arm with two ball
+    // a flat disc on top, a segmented arm with three ball
     // joints, and the ball on the end. The group origin is
     // the pivot under the disc, so the Rotate tool swings
     // the whole arm. The joints bend for follow through:
-    // Joint 1 rides the Tail 1 channel and Joint 2 rides
-    // Tail 2, so the rings, the graph, and Set Key all
-    // work on them just like the tail controllers.
+    // Joint 1, 2, and 3 ride the Tail 1, 2, and 3 channels,
+    // so the rings, the graph, and Set Key all work on
+    // them just like the tail controllers.
     armLen = sliders.armLength;
-    const [s1, s2, s3] = pendSegLens();
+    const [s1, s2, s3, s4] = pendSegLens();
+    // The disc has a fixed size: the Ball size slider
+    // sizes the ball only, never the disc or the arm.
+    // No outline shell on the disc: no black ring around it.
     const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.15 * ballRadius + 0.25, 1.15 * ballRadius + 0.25, 0.12, 28), sketchMat);
+      new THREE.CylinderGeometry(1.3, 1.3, 0.12, 28), sketchMat);
     disc.name = 'TopDisc';
     disc.position.y = 0.14;
-    addOutline(disc, 1.03);
     charGroup.add(disc);
     const mount = new THREE.Mesh(unitSphere, sketchMat);
     mount.name = 'PivotMount';
@@ -729,11 +733,14 @@ function buildRig() {
     charGroup.add(j1);
     const j2 = mkJoint('Joint2', s2, s3, 0.04);
     j1.add(j2);
-    pendJoints = [j1, j2];
+    const j3 = mkJoint('Joint3', s3, s4, 0.035);
+    j2.add(j3);
+    pendJoints = [j1, j2, j3];
     tailCtrlJoints.tail1 = j1;
     tailCtrlJoints.tail2 = j2;
+    tailCtrlJoints.tail3 = j3;
     // Control rings on the joints, like the tail rings.
-    for (const [j, name] of [[j1, 'tail1'], [j2, 'tail2']]) {
+    for (const [j, name] of [[j1, 'tail1'], [j2, 'tail2'], [j3, 'tail3']]) {
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(0.19, 0.03, 10, 28),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
@@ -750,10 +757,10 @@ function buildRig() {
     }
     headGroup = new THREE.Group();
     headGroup.name = 'PendulumBall';
-    headGroup.position.y = -s3;
+    headGroup.position.y = -s4;
     charGroup.remove(ballMesh);
     headGroup.add(ballMesh);
-    j2.add(headGroup);
+    j3.add(headGroup);
   }
 
   // Ghost pool: up to 8 ghosts per side. Each ghost gets
@@ -811,6 +818,7 @@ function applyPose() {
     // The arm joints bend in the swing plane (rotation z).
     pendJoints[0].rotation.z = rad(p.tail1);
     pendJoints[1].rotation.z = rad(p.tail2);
+    pendJoints[2].rotation.z = rad(p.tail3);
   }
   if (legL) { legL.rotation.z = p.legStep; legR.rotation.z = -p.legStep; }
   updateGhosts();
@@ -834,8 +842,8 @@ function updateGhosts() {
     const gp = evalAll(f);
     if (template === 4) {
       // The ghost ball hangs at the end of the jointed arm:
-      // walk the chain — pivot swing, Joint 1 bend, Joint 2 bend.
-      const [s1, s2, s3] = pendSegLens();
+      // walk the chain — pivot swing, then each joint bend.
+      const [s1, s2, s3, s4] = pendSegLens();
       _m.makeRotationFromEuler(_gEuler.set(rad(gp.rotateX), rad(gp.rotateY), rad(gp.rotateZ)));
       _m.setPosition(gp.moveX, restLift() + gp.moveY, gp.moveZ);
       _m2.makeTranslation(0, -s1, 0); _m.multiply(_m2);
@@ -843,6 +851,8 @@ function updateGhosts() {
       _m2.makeTranslation(0, -s2, 0); _m.multiply(_m2);
       _m2.makeRotationZ(rad(gp.tail2)); _m.multiply(_m2);
       _m2.makeTranslation(0, -s3, 0); _m.multiply(_m2);
+      _m2.makeRotationZ(rad(gp.tail3)); _m.multiply(_m2);
+      _m2.makeTranslation(0, -s4, 0); _m.multiply(_m2);
       mesh.position.setFromMatrixPosition(_m);
     } else {
       mesh.position.set(
