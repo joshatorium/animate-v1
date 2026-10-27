@@ -54,7 +54,8 @@ const CHANNEL_NAMES = [
   'scaleX', 'scaleY', 'scaleZ',
   'tail1', 'tail2', 'tail3', 'legStep',
   'hipL', 'kneeL', 'ankleL', 'toeL',
-  'hipR', 'kneeR', 'ankleR', 'toeR'
+  'hipR', 'kneeR', 'ankleR', 'toeR',
+  'footLX', 'footLY', 'footRX', 'footRY'
 ];
 const DEFAULTS = {
   moveX: 0, moveY: 0, moveZ: 0,
@@ -62,7 +63,8 @@ const DEFAULTS = {
   scaleX: 1, scaleY: 1, scaleZ: 1,
   tail1: 0, tail2: 0, tail3: 0, legStep: 0,
   hipL: 0, kneeL: 0, ankleL: 0, toeL: 0,
-  hipR: 0, kneeR: 0, ankleR: 0, toeR: 0
+  hipR: 0, kneeR: 0, ankleR: 0, toeR: 0,
+  footLX: 0, footLY: 0, footRX: 0, footRY: 0
 };
 const CHAN_LABEL = {
   moveX: 'Move X', moveY: 'Move Y', moveZ: 'Move Z',
@@ -70,7 +72,9 @@ const CHAN_LABEL = {
   scaleX: 'Scale X', scaleY: 'Scale Y', scaleZ: 'Scale Z',
   tail1: 'Tail 1', tail2: 'Tail 2', tail3: 'Tail 3', legStep: 'Leg Step',
   hipL: 'Hip L', kneeL: 'Knee L', ankleL: 'Ankle L', toeL: 'Toe L',
-  hipR: 'Hip R', kneeR: 'Knee R', ankleR: 'Ankle R', toeR: 'Toe R'
+  hipR: 'Hip R', kneeR: 'Knee R', ankleR: 'Ankle R', toeR: 'Toe R',
+  footLX: 'Foot L X', footLY: 'Foot L Y', footRX: 'Foot R X', footRY: 'Foot R Y',
+  footL: 'Foot L', footR: 'Foot R'
 };
 const CHAN_COLOR = {
   moveX: '#ff6b6b', moveY: '#5cd68c', moveZ: '#54aaff',
@@ -78,7 +82,8 @@ const CHAN_COLOR = {
   scaleX: '#ffb042', scaleY: '#ffd76e', scaleZ: '#e0aaff',
   tail1: '#5ad2dc', tail2: '#ff7eb6', tail3: '#fab005', legStep: '#c792ff',
   hipL: '#ff8787', kneeL: '#ffa94d', ankleL: '#ffd43b', toeL: '#a9e34b',
-  hipR: '#63e6be', kneeR: '#4dabf7', ankleR: '#9775fa', toeR: '#f783ac'
+  hipR: '#63e6be', kneeR: '#4dabf7', ankleR: '#9775fa', toeR: '#f783ac',
+  footLX: '#ffa94d', footLY: '#ffc078', footRX: '#4dabf7', footRY: '#74c0fc'
 };
 // The tail has three controllers. Each one bends the tail from its
 // joint onward, so the tail can make C shapes and S shapes.
@@ -455,6 +460,8 @@ let headGroup = null; // the pendulum head group (template 2)
 let armLen = 4.4;     // the pendulum arm length, from the slider
 let pendJoints = [];  // the pendulum arm joints (template 2)
 let walkerJoints = null; // {L, R} leg joint groups (template 4)
+let walkerGeom = null;   // leg sizes and solved shin angles (template 4)
+let ikHandles = {};      // foot target handles: footL, footR (template 4)
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
@@ -476,6 +483,25 @@ function chanLabel(name) {
 // The height of the group origin when Move Y is 0: the ball
 // center on ball rigs, the pivot on the pendulum.
 function restLift() { return template === 2 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
+// Two-bone IK for one walker leg. The target is in hip
+// space: x forward, y up (so y is negative below the
+// hip). The knee always bulges forward. The ankle keeps
+// the foot flat, plus the animator's ankle value.
+// Returns the solved shin angle, for readbacks.
+function poseLegIK(J, tx, ty, a, b, ankleRad) {
+  const dist = Math.max(Math.hypot(tx, ty), 0.0001);
+  const d = Math.min(dist, a + b - 0.001);
+  const phi = Math.atan2(tx, -ty);
+  const beta = Math.acos(clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1));
+  const hipTheta = phi + beta;
+  const kx = a * Math.sin(hipTheta), ky = -a * Math.cos(hipTheta);
+  const cx = tx * (d / dist), cy = ty * (d / dist);
+  const shinTheta = Math.atan2(cx - kx, -(cy - ky));
+  J.hip.rotation.z = hipTheta;
+  J.knee.rotation.z = shinTheta - hipTheta;
+  J.ankle.rotation.z = ankleRad - shinTheta;
+  return shinTheta;
+}
 let ballRadius = 0.9, legClear = 0;
 
 // Sketch look, after the user's pencil-sphere sketch:
@@ -536,10 +562,12 @@ const outlineMatSoft = new THREE.MeshBasicMaterial({
   color: 0x1f2328, side: THREE.BackSide, transparent: true, opacity: 0.35, depthWrite: false
 });
 function addOutline(mesh, grow) {
-  const ol = new THREE.Mesh(unitSphere, outlineMat);
+  // The shell must copy the mesh's own shape. A sphere
+  // shell on a box mesh makes a giant black ball.
+  const ol = new THREE.Mesh(mesh.geometry, outlineMat);
   ol.scale.setScalar(grow);
   mesh.add(ol);
-  const ol2 = new THREE.Mesh(unitSphere, outlineMatSoft);
+  const ol2 = new THREE.Mesh(mesh.geometry, outlineMatSoft);
   ol2.scale.setScalar(grow + 0.022);
   mesh.add(ol2);
   return ol;
@@ -635,9 +663,21 @@ function buildRig() {
   ballMesh.add(tick);
   charGroup.add(ballMesh);
 
-  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null;
+  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null; walkerGeom = null; ikHandles = {};
   tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
   tailCtrlMeshes = [];
+  // Controller ring on the ball's equator, where the red
+  // line runs: 10% wider than the ball. It rides the ball
+  // mesh, so it tracks the ball size like the red line.
+  // Click it to pick the ball and rotate it.
+  const ballRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.10, 0.035, 10, 48),
+    new THREE.MeshBasicMaterial({ color: 0xd43d2a })
+  );
+  ballRing.rotation.x = Math.PI / 2;
+  ballRing.userData.ctrl = 'ball';
+  ballMesh.add(ballRing);
+  addHitRing(ballMesh, 1.10, 0.17, 'x', { ctrl: 'ball', tool: 'rotate', label: 'ballring' });
   if (template === 3) {
     // A chain of small spheres. Each joint bends a little.
     const count = Math.round(sliders.tailLength);
@@ -743,10 +783,12 @@ function buildRig() {
     const wl = mkLeg('L', ballRadius * 0.42);
     const wr = mkLeg('R', -ballRadius * 0.42);
     walkerJoints = { L: wl, R: wr };
-    // Ring controllers on every joint, with fat hit rings.
+    walkerGeom = { upper, lower, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, shinL: 0, shinR: 0 };
+    // Ring controllers on the ankle and toe: the hip and
+    // knee are solved by IK, so they get no rings.
     const ringDefs = [
-      [wl.hip, 'hipL'], [wl.knee, 'kneeL'], [wl.ankle, 'ankleL'], [wl.toe, 'toeL'],
-      [wr.hip, 'hipR'], [wr.knee, 'kneeR'], [wr.ankle, 'ankleR'], [wr.toe, 'toeR']
+      [wl.ankle, 'ankleL'], [wl.toe, 'toeL'],
+      [wr.ankle, 'ankleR'], [wr.toe, 'toeR']
     ];
     for (const [j, name] of ringDefs) {
       tailCtrlJoints[name] = j;
@@ -760,6 +802,28 @@ function buildRig() {
       tailCtrlMeshes.push(ring);
       addHitRing(j, 0.17, 0.13, 'x', { ctrl: name });
     }
+    // IK foot handles: a diamond at each foot. Drag it
+    // with the Move tool and the leg solves to reach it.
+    const mkHandle = (side, z, color) => {
+      const h = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.13),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      h.name = 'FootHandle' + side;
+      h.position.set(0, -ballRadius - (upper + lower), z);
+      Object.assign(h.userData, { ctrl: 'foot' + side, tool: 'move', label: 'foot' + side });
+      charGroup.add(h);
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30), hitMat);
+      Object.assign(hit.userData, { ctrl: 'foot' + side, tool: 'move', label: 'foot' + side });
+      h.add(hit);
+      tailCtrlMeshes.push(h);
+      tailCtrlMeshes.push(hit);
+      return h;
+    };
+    ikHandles = {
+      footL: mkHandle('L', ballRadius * 0.42, 0xffa94d),
+      footR: mkHandle('R', -ballRadius * 0.42, 0x4dabf7)
+    };
   }
 
   headGroup = null; pendJoints = [];
@@ -924,18 +988,20 @@ function applyPose() {
     pendJoints[1].rotation.z = rad(p.tail2);
     pendJoints[2].rotation.z = rad(p.tail3);
   }
-  if (template === 4 && walkerJoints) {
-    // Walker legs: every joint bends in the step plane.
-    // Leg Step still splits the hips, like the old rig.
-    const s = rad(p.legStep);
-    walkerJoints.L.hip.rotation.z = rad(p.hipL) + s;
-    walkerJoints.R.hip.rotation.z = rad(p.hipR) - s;
-    walkerJoints.L.knee.rotation.z = rad(p.kneeL);
-    walkerJoints.R.knee.rotation.z = rad(p.kneeR);
-    walkerJoints.L.ankle.rotation.z = rad(p.ankleL);
-    walkerJoints.R.ankle.rotation.z = rad(p.ankleR);
+  if (template === 4 && walkerJoints && walkerGeom) {
+    // Walker legs are IK: the foot channels place the
+    // feet, and each leg solves its hip and knee to reach.
+    // Leg Step still splits the feet, like the old stride.
+    const g = walkerGeom;
+    const stepX = p.legStep * 0.02;
+    const txL = p.footLX + stepX, tyL = -(g.upper + g.lower) + p.footLY;
+    const txR = p.footRX - stepX, tyR = -(g.upper + g.lower) + p.footRY;
+    g.shinL = poseLegIK(walkerJoints.L, txL, tyL, g.upper, g.lower, rad(p.ankleL));
+    g.shinR = poseLegIK(walkerJoints.R, txR, tyR, g.upper, g.lower, rad(p.ankleR));
     walkerJoints.L.toe.rotation.z = rad(p.toeL);
     walkerJoints.R.toe.rotation.z = rad(p.toeR);
+    if (ikHandles.footL) ikHandles.footL.position.set(txL, -ballRadius + tyL, g.zL);
+    if (ikHandles.footR) ikHandles.footR.position.set(txR, -ballRadius + tyR, g.zR);
   }
   updateGhosts();
   updateSettings();
@@ -1010,6 +1076,18 @@ tc.addEventListener('dragging-changed', (e) => {
 // Dragging with a tool writes back into the live pose (not yet keyed).
 tc.addEventListener('objectChange', () => {
   if (!charGroup) return;
+  if (ikHandles[selectedCtrl]) {
+    // An IK foot handle is picked: its place IS the pose.
+    const h = ikHandles[selectedCtrl];
+    const side = selectedCtrl === 'footL' ? 'L' : 'R';
+    if (h && walkerGeom) {
+      livePose['foot' + side + 'X'] = Math.round(h.position.x * 100) / 100;
+      livePose['foot' + side + 'Y'] = Math.round((h.position.y + ballRadius + walkerGeom.upper + walkerGeom.lower) * 100) / 100;
+    }
+    applyPose();
+    if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
+    return;
+  }
   if (selectedCtrl !== 'ball') {
     // A tail controller is picked. Only its bend (rotation z) counts.
     const j = tailCtrlJoints[selectedCtrl];
@@ -1019,6 +1097,11 @@ tc.addEventListener('objectChange', () => {
       // take it back off so the value is the hip's own.
       if (selectedCtrl === 'hipL') base = rad(livePose.legStep);
       if (selectedCtrl === 'hipR') base = -rad(livePose.legStep);
+      // The walker ankle is solved by IK: its world angle
+      // holds the foot flat. Take the solved shin angle
+      // back off so the value is the animator's own pitch.
+      if (selectedCtrl === 'ankleL' && walkerGeom) base = -walkerGeom.shinL;
+      if (selectedCtrl === 'ankleR' && walkerGeom) base = -walkerGeom.shinR;
       const deg = (j.rotation.z - base) * 180 / Math.PI;
       livePose[selectedCtrl] = Math.round(clamp(deg, -170, 170) * 100) / 100;
     }
@@ -1048,6 +1131,7 @@ tc.addEventListener('objectChange', () => {
 
 // ---------- Tools ----------
 function selectedObject() {
+  if (ikHandles[selectedCtrl]) return ikHandles[selectedCtrl];
   return selectedCtrl === 'ball' ? charGroup : tailCtrlJoints[selectedCtrl];
 }
 function setTool(tool) {
@@ -1062,7 +1146,7 @@ function setTool(tool) {
 
 // Pick the ball or a tail controller by clicking in the 3D view.
 function selectControl(name) {
-  if (name !== 'ball' && !tailCtrlJoints[name]) return;
+  if (name !== 'ball' && !tailCtrlJoints[name] && !ikHandles[name]) return;
   selectedCtrl = name;
   if (name === 'ball') {
     say('Ball picked.');
@@ -1092,6 +1176,9 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     if (u.tool) setTool(u.tool);
     if (u.label === 'disc') say('Disc picked. Drag the Move arrows (W) to move the whole rig.');
     if (u.label === 'pivot') say('Top arm picked. Drag the round Rotate arrows (E) to swing the arm.');
+    if (u.label === 'ballring') say('Ball picked. Drag the round Rotate arrows (E) to turn the ball.');
+    if (u.label === 'footL') say('Foot L picked. Drag the Move arrows (W) to place the foot.');
+    if (u.label === 'footR') say('Foot R picked. Drag the Move arrows (W) to place the foot.');
     return;
   }
   const rigHits = raycaster.intersectObject(charGroup, true);
@@ -1726,7 +1813,7 @@ function buildGeChannelList() {
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
     ['EXTRA', ['tail1', 'tail2', 'tail3', 'legStep']],
-    ['WALKER', ['hipL', 'kneeL', 'ankleL', 'toeL', 'hipR', 'kneeR', 'ankleR', 'toeR']]
+    ['WALKER', ['footLX', 'footLY', 'ankleL', 'toeL', 'footRX', 'footRY', 'ankleR', 'toeR']]
   ];
   for (const [gname, names] of groups) {
     const h = document.createElement('div');
