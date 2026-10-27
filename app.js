@@ -208,7 +208,7 @@ const history = [];
 function pushHistory(label) {
   history.push({
     label,
-    state: JSON.parse(JSON.stringify({ channels, livePose, template, sliders, frames: LAST_FRAME }))
+    state: JSON.parse(JSON.stringify({ channels, livePose, template, sliders, frames: LAST_FRAME, walkerTailOn }))
   });
   if (history.length > 99) history.shift();   // keep the last 99 actions
 }
@@ -217,6 +217,8 @@ function undo() {
   if (!item) { say('Nothing to undo.'); return; }
   channels = item.state.channels;
   Object.assign(sliders, item.state.sliders);
+  walkerTailOn = item.state.walkerTailOn !== false;
+  $('chkWalkerTail').checked = walkerTailOn;
   livePose = item.state.livePose;
   geSelectedKey = null;
   geSelKeys = [];
@@ -478,6 +480,8 @@ let ikGroup = null;      // scene group holding the IK handles (world space)
 let walkerLegRoot = null; // leg root: counter-turned so body rotation skips the legs
 let poleHandles = {};    // knee pole handles: poleL, poleR (template 4)
 let poleLines = {};      // line from each pole handle to its knee
+let walkerTailOn = true; // the Walker can wear the long tail, or not
+let tailDirX = 1;        // which way the tail grows: +1 front rig, -1 Walker back
 const _ikT = new THREE.Vector3();
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
@@ -569,7 +573,7 @@ function poseLegIK(J, T, P, a, b, pitchRad, rollRad, yawRad) {
 function poleAnchor(side, p, g) {
   const step = (side === 'L' ? 1 : -1) * p.legStep * 0.02;
   return [
-    p['foot' + side + 'X'] + step + 0.8,
+    p['foot' + side + 'X'] + step + (g['stag' + side] || 0) + 0.8,
     g.ankleH + p['foot' + side + 'Y'] + (g.upper + g.lower) * 0.55
   ];
 }
@@ -578,7 +582,7 @@ function poleAnchor(side, p, g) {
 function poseWalkerLeg(side, J, p, g) {
   const zSide = side === 'L' ? g.zL : g.zR;
   const step = (side === 'L' ? 1 : -1) * p.legStep * 0.02;
-  const fx = p['foot' + side + 'X'] + step;
+  const fx = p['foot' + side + 'X'] + step + (g['stag' + side] || 0);
   const fy = p['foot' + side + 'Y'];
   const fz = zSide + p['foot' + side + 'Z'];
   const hipPos = [p.moveX, legClear + p.moveY, p.moveZ + zSide];
@@ -748,6 +752,61 @@ function disposeGroup(g) {
   g.traverse((o) => { if (o.geometry && o.geometry !== unitSphere) o.geometry.dispose(); });
 }
 
+// Build the tail chain on the ball control: a row of
+// small spheres, with the three ring controllers (base,
+// mid, tip). dirX says which way it grows: +1 for the
+// Ball + Tail rig, -1 out the Walker's back.
+function buildTail(dirX, count) {
+  tailDirX = dirX;
+  const segLen = ballRadius * 0.55;
+  tailRoot = new THREE.Group(); tailRoot.name = 'TailRoot';
+  charGroup.add(tailRoot);
+  let parent = tailRoot;
+  for (let i = 0; i < count; i++) {
+    const joint = new THREE.Group();
+    joint.name = 'Tail' + (i + 1);
+    joint.position.x = i === 0 ? 0 : dirX * segLen;
+    const seg = new THREE.Mesh(unitSphere, tailMat);
+    const r = ballRadius * (0.34 - i * 0.035);
+    seg.scale.setScalar(Math.max(r, 0.08));
+    seg.position.x = dirX * segLen / 2;
+    addOutline(seg, 1.06);
+    joint.add(seg);
+    parent.add(joint);
+    tailJoints.push(joint);
+    parent = joint;
+  }
+  const ctrlIdx = {
+    tail1: 0,
+    tail2: Math.floor(count / 3),
+    tail3: Math.floor((2 * count) / 3)
+  };
+  const seen = new Set();
+  for (const name of TAIL_CHANNELS) {
+    const idx = ctrlIdx[name];
+    if (idx >= count || seen.has(idx)) continue;
+    seen.add(idx);
+    const joint = tailJoints[idx];
+    tailCtrlJoints[name] = joint;
+    const r = ballRadius * (0.34 - idx * 0.035) + 0.14;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(r, 0.035, 10, 28),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
+    );
+    ring.rotation.y = Math.PI / 2;   // the ring stands around the tail
+    ring.userData.ctrl = name;
+    joint.add(ring);
+    // A loose second ring: the sketched double-stroke look.
+    const twin = new THREE.Mesh(ring.geometry, ring.material);
+    twin.rotation.set(0.07, Math.PI / 2, 0);
+    twin.scale.setScalar(1.12);
+    twin.position.x = dirX * 0.02;
+    joint.add(twin);
+    tailCtrlMeshes.push(ring);
+    addHitRing(joint, r, 0.13, 'y', { ctrl: name });
+  }
+}
+
 function buildRig() {
   if (charGroup) { scene.remove(charGroup); disposeGroup(charGroup); }
   if (pendMount) { scene.remove(pendMount); disposeGroup(pendMount); pendMount = null; }
@@ -757,6 +816,7 @@ function buildRig() {
   charGroup = new THREE.Group();
   charGroup.name = 'BallControl';
   ballRadius = 0.9 * sliders.ballSize;
+  if (template === 4) ballRadius *= 0.85;   // the Walker's ball runs 15% smaller
   legClear = template === 4 ? sliders.legLength * 0.85 : 0;
 
   ballMesh = new THREE.Mesh(unitSphere, ballMat);
@@ -789,60 +849,7 @@ function buildRig() {
   ballRing.userData.ctrl = 'ball';
   ballMesh.add(ballRing);
   addHitRing(ballMesh, 1.10, 0.17, 'x', { ctrl: 'ball', tool: 'rotate', label: 'ballring' });
-  if (template === 3) {
-    // A chain of small spheres. Each joint bends a little.
-    const count = Math.round(sliders.tailLength);
-    const segLen = ballRadius * 0.55;
-    tailRoot = new THREE.Group(); tailRoot.name = 'TailRoot';
-    charGroup.add(tailRoot);
-    let parent = tailRoot;
-    for (let i = 0; i < count; i++) {
-      const joint = new THREE.Group();
-      joint.name = 'Tail' + (i + 1);
-      joint.position.x = i === 0 ? 0 : segLen;
-      const seg = new THREE.Mesh(unitSphere, tailMat);
-      const r = ballRadius * (0.34 - i * 0.035);
-      seg.scale.setScalar(Math.max(r, 0.08));
-      seg.position.x = segLen / 2;
-      addOutline(seg, 1.06);
-      joint.add(seg);
-      parent.add(joint);
-      tailJoints.push(joint);
-      parent = joint;
-    }
-    // Three controllers along the tail: base, mid, and tip.
-    // Each controller is a ring in the 3D view. Click a ring to pick
-    // it, then rotate it. Its bend runs from its joint to the tip.
-    const ctrlIdx = {
-      tail1: 0,
-      tail2: Math.floor(count / 3),
-      tail3: Math.floor((2 * count) / 3)
-    };
-    const seen = new Set();
-    for (const name of TAIL_CHANNELS) {
-      const idx = ctrlIdx[name];
-      if (idx >= count || seen.has(idx)) continue;
-      seen.add(idx);
-      const joint = tailJoints[idx];
-      tailCtrlJoints[name] = joint;
-      const r = ballRadius * (0.34 - idx * 0.035) + 0.14;
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(r, 0.035, 10, 28),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
-      );
-      ring.rotation.y = Math.PI / 2;   // the ring stands around the tail
-      ring.userData.ctrl = name;
-      joint.add(ring);
-      // A loose second ring: the sketched double-stroke look.
-      const twin = new THREE.Mesh(ring.geometry, ring.material);
-      twin.rotation.set(0.07, Math.PI / 2, 0);
-      twin.scale.setScalar(1.12);
-      twin.position.x = 0.02;
-      joint.add(twin);
-      tailCtrlMeshes.push(ring);
-      addHitRing(joint, r, 0.13, 'y', { ctrl: name });
-    }
-  }
+  if (template === 3) buildTail(1, Math.round(sliders.tailLength));
   if (template === 4) {
     // Walker, after the Ultimate Walker rig: a ball body
     // on two jointed legs, for basic body mechanics and
@@ -899,10 +906,10 @@ function buildRig() {
       legRoot.add(hip);
       return { hip, knee, ankle, toe };
     };
-    const wl = mkLeg('L', ballRadius * 0.42);
-    const wr = mkLeg('R', -ballRadius * 0.42);
+    const wl = mkLeg('L', ballRadius * 0.55);
+    const wr = mkLeg('R', -ballRadius * 0.55);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.42, zR: -ballRadius * 0.42 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.55, zR: -ballRadius * 0.55, stagL: 0.10, stagR: -0.10 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
@@ -946,8 +953,8 @@ function buildRig() {
       return h;
     };
     ikHandles = {
-      footL: mkHandle('L', ballRadius * 0.42, 0xffa94d),
-      footR: mkHandle('R', -ballRadius * 0.42, 0x4dabf7)
+      footL: mkHandle('L', ballRadius * 0.55, 0xffa94d),
+      footR: mkHandle('R', -ballRadius * 0.55, 0x4dabf7)
     };
     // Pole handles: a small ball in front of each knee.
     // Drag one and the knee bends toward it. A thin line
@@ -975,9 +982,13 @@ function buildRig() {
       return h;
     };
     poleHandles = {
-      poleL: mkPole('L', ballRadius * 0.42, 0x22b8cf),
-      poleR: mkPole('R', -ballRadius * 0.42, 0xbe4bdb)
+      poleL: mkPole('L', ballRadius * 0.55, 0x22b8cf),
+      poleR: mkPole('R', -ballRadius * 0.55, 0xbe4bdb)
     };
+    // The Walker can wear the long tail: the same chain
+    // as the tail rig, half again as long, out the back,
+    // with the same three ring controllers.
+    if (walkerTailOn) buildTail(-1, Math.round(sliders.tailLength * 1.6));
   }
 
   headGroup = null; pendJoints = [];
@@ -1125,7 +1136,7 @@ function applyPose() {
     ballMesh.scale.set(ballRadius * p.scaleX, ballRadius * p.scaleY, ballRadius * p.scaleZ);
   }
   if (tailRoot) {
-    tailRoot.position.set(ballRadius * 0.72, ballRadius * 0.3, 0);
+    tailRoot.position.set(ballRadius * 0.72 * tailDirX, ballRadius * 0.3, 0);
     // The Tail bend slider is a soft base curl, spread over all joints.
     const each = tailJoints.length ? sliders.tailBend / tailJoints.length : 0;
     for (const j of tailJoints) j.rotation.set(0, 0, each);
@@ -1277,7 +1288,9 @@ tc.addEventListener('objectChange', () => {
         livePose['footYaw' + side] = rd(h.rotation.y);
       } else {
         const zSide = side === 'L' ? walkerGeom.zL : walkerGeom.zR;
-        livePose['foot' + side + 'X'] = Math.round(h.position.x * 100) / 100;
+        const step = (side === 'L' ? 1 : -1) * livePose.legStep * 0.02;
+        livePose['foot' + side + 'X'] =
+          Math.round((h.position.x - step - (walkerGeom['stag' + side] || 0)) * 100) / 100;
         livePose['foot' + side + 'Y'] = Math.round((h.position.y - walkerGeom.ankleH) * 100) / 100;
         livePose['foot' + side + 'Z'] = Math.round((h.position.z - zSide) * 100) / 100;
       }
@@ -1896,12 +1909,18 @@ $('sldTailLen').addEventListener('input', (e) => { noteSliderStart('sldTailLen',
 $('sldTailBend').addEventListener('input', (e) => { noteSliderStart('sldTailBend', 'Tail bend'); sliders.tailBend = Number(e.target.value); applyPose(); });
 $('sldLegLen').addEventListener('input', (e) => { noteSliderStart('sldLegLen', 'Leg length'); sliders.legLength = Number(e.target.value); buildRig(); });
 $('sldArmLen').addEventListener('input', (e) => { noteSliderStart('sldArmLen', 'Arm length'); sliders.armLength = Number(e.target.value); buildRig(); });
+$('chkWalkerTail').addEventListener('change', (e) => {
+  walkerTailOn = e.target.checked;
+  if (template === 4) { pushHistory(walkerTailOn ? 'Walker tail on' : 'Walker tail off'); buildRig(); }
+  say(walkerTailOn ? 'Walker tail on.' : 'Walker tail off.');
+});
 
 // ---------- Save / Open project JSON ----------
 function projectData() {
   return {
     app: 'ANIMATE', version: 1, name: SCENE_NAME, rigOrder: 2,
-    template, sliders: { ...sliders }, channels, frames: LAST_FRAME
+    template, sliders: { ...sliders }, channels, frames: LAST_FRAME,
+    walkerTail: walkerTailOn
   };
 }
 $('btnSave').addEventListener('click', () => {
@@ -1943,6 +1962,8 @@ $('openFile').addEventListener('change', async (e) => {
       }
     }
     if (data.sliders) Object.assign(sliders, data.sliders);
+    walkerTailOn = data.walkerTail !== false;
+    $('chkWalkerTail').checked = walkerTailOn;
     $('sldSize').value = sliders.ballSize;
     $('sldTailLen').value = sliders.tailLength;
     $('sldTailBend').value = sliders.tailBend;
