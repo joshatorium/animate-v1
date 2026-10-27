@@ -42,7 +42,7 @@ let ghostAhead = 3;   // ghosts after this frame (blue)
 let ghostBehind = 3;  // ghosts before this frame (red)
 let ghostStep = 4;    // frames between ghosts
 let autoKeyOn = false;
-let template = 3;            // 1 Ball, 2 Pendulum, 3 Ball+Tail, 4 Ball+Legs
+let template = 3;            // 1 Ball, 2 Pendulum, 3 Ball+Tail, 4 Walker
 const sliders = { ballSize: 1, tailLength: 4, tailBend: 0.35, legLength: 1, armLength: 4.4 };
 
 // ---------- Data core: channels and keys ----------
@@ -52,7 +52,9 @@ const CHANNEL_NAMES = [
   'moveX', 'moveY', 'moveZ',
   'rotateX', 'rotateY', 'rotateZ',
   'scaleX', 'scaleY', 'scaleZ',
-  'tail1', 'tail2', 'tail3', 'legStep'
+  'tail1', 'tail2', 'tail3', 'legStep',
+  'hipL', 'kneeL', 'ankleL', 'toeL',
+  'hipR', 'kneeR', 'ankleR', 'toeR'
 ];
 const DEFAULTS = {
   moveX: 0, moveY: 0, moveZ: 0,
@@ -64,13 +66,17 @@ const CHAN_LABEL = {
   moveX: 'Move X', moveY: 'Move Y', moveZ: 'Move Z',
   rotateX: 'Rotate X', rotateY: 'Rotate Y', rotateZ: 'Rotate Z',
   scaleX: 'Scale X', scaleY: 'Scale Y', scaleZ: 'Scale Z',
-  tail1: 'Tail 1', tail2: 'Tail 2', tail3: 'Tail 3', legStep: 'Leg Step'
+  tail1: 'Tail 1', tail2: 'Tail 2', tail3: 'Tail 3', legStep: 'Leg Step',
+  hipL: 'Hip L', kneeL: 'Knee L', ankleL: 'Ankle L', toeL: 'Toe L',
+  hipR: 'Hip R', kneeR: 'Knee R', ankleR: 'Ankle R', toeR: 'Toe R'
 };
 const CHAN_COLOR = {
   moveX: '#ff6b6b', moveY: '#5cd68c', moveZ: '#54aaff',
   rotateX: '#ff9d7a', rotateY: '#a8e063', rotateZ: '#7ac7ff',
   scaleX: '#ffb042', scaleY: '#ffd76e', scaleZ: '#e0aaff',
-  tail1: '#5ad2dc', tail2: '#ff7eb6', tail3: '#fab005', legStep: '#c792ff'
+  tail1: '#5ad2dc', tail2: '#ff7eb6', tail3: '#fab005', legStep: '#c792ff',
+  hipL: '#ff8787', kneeL: '#ffa94d', ankleL: '#ffd43b', toeL: '#a9e34b',
+  hipR: '#63e6be', kneeR: '#4dabf7', ankleR: '#9775fa', toeR: '#f783ac'
 };
 // The tail has three controllers. Each one bends the tail from its
 // joint onward, so the tail can make C shapes and S shapes.
@@ -446,6 +452,7 @@ let ghostPool = [];   // [{mesh, side, idx}] built by buildRig
 let headGroup = null; // the pendulum head group (template 2)
 let armLen = 4.4;     // the pendulum arm length, from the slider
 let pendJoints = [];  // the pendulum arm joints (template 2)
+let walkerJoints = null; // {L, R} leg joint groups (template 4)
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
@@ -626,7 +633,7 @@ function buildRig() {
   ballMesh.add(tick);
   charGroup.add(ballMesh);
 
-  tailJoints = []; tailRoot = null; legL = null; legR = null;
+  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null;
   tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
   tailCtrlMeshes = [];
   if (template === 3) {
@@ -684,24 +691,72 @@ function buildRig() {
     }
   }
   if (template === 4) {
-    // Two simple legs under the ball.
-    const legLen = sliders.legLength * 0.85;
-    const mkLeg = (name, z) => {
+    // Walker, after the Ultimate Walker rig: a ball body
+    // on two jointed legs, for basic body mechanics and
+    // walk cycles. Each leg has a hip, a knee, an ankle,
+    // and a toe, each on its own channel, with a ring
+    // controller on every joint. The old Leg Step channel
+    // still works: it splits the two hips apart.
+    const legLen = sliders.legLength * 0.85;   // hip to ground
+    const ankleH = 0.10;                        // ankle height off the ground
+    const upper = (legLen - ankleH) * 0.52;
+    const lower = (legLen - ankleH) * 0.48;
+    const mkLeg = (side, z) => {
       const hip = new THREE.Group();
-      hip.name = name;
-      hip.position.set(0, -ballRadius, z);   // hip at the bottom of the ball (pivot is the center)
-      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, legLen, 10), legMat);
-      cyl.position.y = -legLen / 2;
-      const foot = new THREE.Mesh(unitSphere, legMat);
-      foot.scale.set(0.24, 0.12, 0.16);
-      foot.position.set(0.1, -legLen, 0);
-      addOutline(foot, 1.07);
-      hip.add(cyl); hip.add(foot);
+      hip.name = 'Hip' + side;
+      hip.position.set(0, -ballRadius, z);   // hip at the bottom of the ball
+      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.085, upper, 10), legMat);
+      thigh.position.y = -upper / 2;
+      hip.add(thigh);
+      const knee = new THREE.Group();
+      knee.name = 'Knee' + side;
+      knee.position.y = -upper;
+      const kneeBall = new THREE.Mesh(unitSphere, legMat);
+      kneeBall.scale.setScalar(0.105);
+      addOutline(kneeBall, 1.05);
+      knee.add(kneeBall);
+      const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.06, lower, 10), legMat);
+      shin.position.y = -lower / 2;
+      knee.add(shin);
+      hip.add(knee);
+      const ankle = new THREE.Group();
+      ankle.name = 'Ankle' + side;
+      ankle.position.y = -lower;
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.30, ankleH, 0.19), legMat);
+      foot.position.set(0.05, -ankleH / 2, 0);
+      addOutline(foot, 1.04);
+      ankle.add(foot);
+      const toe = new THREE.Group();
+      toe.name = 'Toe' + side;
+      toe.position.set(0.20, -ankleH, 0);   // the toe pivots at the front of the foot, on the ground
+      const toeMesh = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.07, 0.18), legMat);
+      toeMesh.position.set(0.08, 0.035, 0);
+      addOutline(toeMesh, 1.04);
+      toe.add(toeMesh);
+      ankle.add(toe);
       charGroup.add(hip);
-      return hip;
+      return { hip, knee, ankle, toe };
     };
-    legL = mkLeg('LegL', ballRadius * 0.42);
-    legR = mkLeg('LegR', -ballRadius * 0.42);
+    const wl = mkLeg('L', ballRadius * 0.42);
+    const wr = mkLeg('R', -ballRadius * 0.42);
+    walkerJoints = { L: wl, R: wr };
+    // Ring controllers on every joint, with fat hit rings.
+    const ringDefs = [
+      [wl.hip, 'hipL'], [wl.knee, 'kneeL'], [wl.ankle, 'ankleL'], [wl.toe, 'toeL'],
+      [wr.hip, 'hipR'], [wr.knee, 'kneeR'], [wr.ankle, 'ankleR'], [wr.toe, 'toeR']
+    ];
+    for (const [j, name] of ringDefs) {
+      tailCtrlJoints[name] = j;
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.17, 0.028, 10, 26),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR[name]) })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.userData.ctrl = name;
+      j.add(ring);
+      tailCtrlMeshes.push(ring);
+      addHitRing(j, 0.17, 0.13, 'x', { ctrl: name });
+    }
   }
 
   headGroup = null; pendJoints = [];
@@ -866,7 +921,19 @@ function applyPose() {
     pendJoints[1].rotation.z = rad(p.tail2);
     pendJoints[2].rotation.z = rad(p.tail3);
   }
-  if (legL) { legL.rotation.z = p.legStep; legR.rotation.z = -p.legStep; }
+  if (template === 4 && walkerJoints) {
+    // Walker legs: every joint bends in the step plane.
+    // Leg Step still splits the hips, like the old rig.
+    const s = rad(p.legStep);
+    walkerJoints.L.hip.rotation.z = rad(p.hipL) + s;
+    walkerJoints.R.hip.rotation.z = rad(p.hipR) - s;
+    walkerJoints.L.knee.rotation.z = rad(p.kneeL);
+    walkerJoints.R.knee.rotation.z = rad(p.kneeR);
+    walkerJoints.L.ankle.rotation.z = rad(p.ankleL);
+    walkerJoints.R.ankle.rotation.z = rad(p.ankleR);
+    walkerJoints.L.toe.rotation.z = rad(p.toeL);
+    walkerJoints.R.toe.rotation.z = rad(p.toeR);
+  }
   updateGhosts();
   updateSettings();
 }
@@ -944,7 +1011,11 @@ tc.addEventListener('objectChange', () => {
     // A tail controller is picked. Only its bend (rotation z) counts.
     const j = tailCtrlJoints[selectedCtrl];
     if (j) {
-      const base = tailJoints.length ? sliders.tailBend / tailJoints.length : 0;
+      let base = tailJoints.length ? sliders.tailBend / tailJoints.length : 0;
+      // The walker hips also carry the Leg Step split:
+      // take it back off so the value is the hip's own.
+      if (selectedCtrl === 'hipL') base = rad(livePose.legStep);
+      if (selectedCtrl === 'hipR') base = -rad(livePose.legStep);
       const deg = (j.rotation.z - base) * 180 / Math.PI;
       livePose[selectedCtrl] = Math.round(clamp(deg, -170, 170) * 100) / 100;
     }
@@ -1578,7 +1649,7 @@ $('openFile').addEventListener('change', async (e) => {
     if (data.frames) setSceneLength(data.frames);
     stopPlay();
     // Rig numbers changed order on 2026-10-26 (1 Ball,
-    // 2 Pendulum, 3 Ball+Tail, 4 Ball+Legs). Files saved
+    // 2 Pendulum, 3 Ball+Tail, 4 Walker). Files saved
     // before that carry no rigOrder mark: remap their
     // old numbers (2 Tail, 3 Legs, 4 Pendulum).
     const tpl = data.rigOrder === 2
@@ -1651,7 +1722,8 @@ function buildGeChannelList() {
   box.appendChild(hint);
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
-    ['EXTRA', ['tail1', 'tail2', 'tail3', 'legStep']]
+    ['EXTRA', ['tail1', 'tail2', 'tail3', 'legStep']],
+    ['WALKER', ['hipL', 'kneeL', 'ankleL', 'toeL', 'hipR', 'kneeR', 'ankleR', 'toeR']]
   ];
   for (const [gname, names] of groups) {
     const h = document.createElement('div');
