@@ -55,7 +55,9 @@ const CHANNEL_NAMES = [
   'tail1', 'tail2', 'tail3', 'legStep',
   'hipL', 'kneeL', 'ankleL', 'toeL',
   'hipR', 'kneeR', 'ankleR', 'toeR',
-  'footLX', 'footLY', 'footRX', 'footRY'
+  'footLX', 'footLY', 'footRX', 'footRY',
+  'footYawL', 'footRollL', 'poleLX', 'poleLY',
+  'footYawR', 'footRollR', 'poleRX', 'poleRY'
 ];
 const DEFAULTS = {
   moveX: 0, moveY: 0, moveZ: 0,
@@ -64,7 +66,9 @@ const DEFAULTS = {
   tail1: 0, tail2: 0, tail3: 0, legStep: 0,
   hipL: 0, kneeL: 0, ankleL: 0, toeL: 0,
   hipR: 0, kneeR: 0, ankleR: 0, toeR: 0,
-  footLX: 0, footLY: 0, footRX: 0, footRY: 0
+  footLX: 0, footLY: 0, footRX: 0, footRY: 0,
+  footYawL: 0, footRollL: 0, poleLX: 0, poleLY: 0,
+  footYawR: 0, footRollR: 0, poleRX: 0, poleRY: 0
 };
 const CHAN_LABEL = {
   moveX: 'Move X', moveY: 'Move Y', moveZ: 'Move Z',
@@ -74,7 +78,9 @@ const CHAN_LABEL = {
   hipL: 'Hip L', kneeL: 'Knee L', ankleL: 'Ankle L', toeL: 'Toe L',
   hipR: 'Hip R', kneeR: 'Knee R', ankleR: 'Ankle R', toeR: 'Toe R',
   footLX: 'Foot L X', footLY: 'Foot L Y', footRX: 'Foot R X', footRY: 'Foot R Y',
-  footL: 'Foot L', footR: 'Foot R'
+  footYawL: 'Foot L Yaw', footRollL: 'Foot L Roll', poleLX: 'Pole L X', poleLY: 'Pole L Y',
+  footYawR: 'Foot R Yaw', footRollR: 'Foot R Roll', poleRX: 'Pole R X', poleRY: 'Pole R Y',
+  footL: 'Foot L', footR: 'Foot R', poleL: 'Pole L', poleR: 'Pole R'
 };
 const CHAN_COLOR = {
   moveX: '#ff6b6b', moveY: '#5cd68c', moveZ: '#54aaff',
@@ -83,7 +89,9 @@ const CHAN_COLOR = {
   tail1: '#5ad2dc', tail2: '#ff7eb6', tail3: '#fab005', legStep: '#c792ff',
   hipL: '#ff8787', kneeL: '#ffa94d', ankleL: '#ffd43b', toeL: '#a9e34b',
   hipR: '#63e6be', kneeR: '#4dabf7', ankleR: '#9775fa', toeR: '#f783ac',
-  footLX: '#ffa94d', footLY: '#ffc078', footRX: '#4dabf7', footRY: '#74c0fc'
+  footLX: '#ffa94d', footLY: '#ffc078', footRX: '#4dabf7', footRY: '#74c0fc',
+  footYawL: '#e599f7', footRollL: '#b197fc', poleLX: '#66d9e8', poleLY: '#3bc9db',
+  footYawR: '#da77f2', footRollR: '#cc5de8', poleRX: '#ffa8a8', poleRY: '#ff8787'
 };
 // The tail has three controllers. Each one bends the tail from its
 // joint onward, so the tail can make C shapes and S shapes.
@@ -464,6 +472,8 @@ let walkerGeom = null;   // leg sizes and solved shin angles (template 4)
 let ikHandles = {};      // foot target handles: footL, footR (template 4)
 let ikGroup = null;      // scene group holding the IK handles (world space)
 let walkerLegRoot = null; // leg root: counter-turned so body rotation skips the legs
+let poleHandles = {};    // knee pole handles: poleL, poleR (template 4)
+let poleLines = {};      // line from each pole handle to its knee
 const _ikT = new THREE.Vector3();
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
@@ -487,23 +497,103 @@ function chanLabel(name) {
 // center on ball rigs, the pivot on the pendulum.
 function restLift() { return template === 2 ? armLen + ballRadius + 0.35 : legClear + ballRadius; }
 // Two-bone IK for one walker leg. The target is in hip
-// space: x forward, y up (so y is negative below the
-// hip). The knee always bulges forward. The ankle keeps
-// the foot flat, plus the animator's ankle value.
-// Returns the solved shin angle, for readbacks.
-function poseLegIK(J, tx, ty, a, b, ankleRad) {
-  const dist = Math.max(Math.hypot(tx, ty), 0.0001);
+// space: x forward, y up (negative below the hip), z to
+// the side. The hip splays (rotation x) so the leg plane
+// holds the target's z: the foot stays planted in all
+// three axes when the body moves. In the leg plane, a
+// POLE vector picks which way the knee bends: the knee
+// sits on the pole's side of the hip-ankle line. The
+// ankle keeps the foot flat, plus the animator's pitch,
+// roll, and yaw. Returns the solved shin angle and the
+// knee offset, for readbacks and the pole line.
+function poseLegIK(J, tx, ty, tz, a, b, ankleRad, rollRad, yawRad, poleVec, geom, signKey) {
+  const splay = (ty || tz) ? Math.atan2(-tz, -ty) : 0;
+  const ty2 = -Math.hypot(ty, tz);   // the target in the leg plane
+  const dist = Math.max(Math.hypot(tx, ty2), 0.0001);
   const d = Math.min(dist, a + b - 0.001);
-  const phi = Math.atan2(tx, -ty);
-  const beta = Math.acos(clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1));
-  const hipTheta = phi + beta;
-  const kx = a * Math.sin(hipTheta), ky = -a * Math.cos(hipTheta);
-  const cx = tx * (d / dist), cy = ty * (d / dist);
+  const ux = tx / dist, uy = ty2 / dist;
+  const h = (a * a - b * b + d * d) / (2 * d);
+  const m = Math.sqrt(Math.max(a * a - h * h, 0));
+  // Bend side: the axis perpendicular, flipped toward the pole.
+  let px = -uy, py = ux;
+  if (poleVec) {
+    const cs = Math.cos(splay), sn = Math.sin(splay);
+    const pInX = poleVec[0];
+    const pInY = poleVec[1] * cs + poleVec[2] * sn;   // the pole in the leg plane
+    const along = pInX * ux + pInY * uy;
+    const wx = pInX - ux * along, wy = pInY - uy * along;
+    const dot = px * wx + py * wy;
+    if (dot < -0.001) geom[signKey] = -1;
+    else if (dot > 0.001) geom[signKey] = 1;
+  }
+  const s = geom[signKey] || 1;
+  const kx = ux * h + px * m * s, ky = uy * h + py * m * s;
+  const hipTheta = Math.atan2(kx, -ky);
+  const cx = tx * (d / dist), cy = ty2 * (d / dist);
   const shinTheta = Math.atan2(cx - kx, -(cy - ky));
+  J.hip.rotation.x = splay;
   J.hip.rotation.z = hipTheta;
   J.knee.rotation.z = shinTheta - hipTheta;
-  J.ankle.rotation.z = ankleRad - shinTheta;
-  return shinTheta;
+  J.ankle.rotation.set(rollRad, yawRad, ankleRad - shinTheta);
+  const kneeOff = [
+    a * Math.sin(hipTheta),
+    -a * Math.cos(hipTheta) * Math.cos(splay),
+    -a * Math.cos(hipTheta) * Math.sin(splay)
+  ];
+  return { shin: shinTheta, kneeOff };
+}
+// The pole handle's home spot for one leg: in front of
+// the knee, following the foot. Pole channels offset it.
+function poleAnchor(side, p, g) {
+  const step = (side === 'L' ? 1 : -1) * p.legStep * 0.02;
+  return [
+    p['foot' + side + 'X'] + step + 0.8,
+    g.ankleH + p['foot' + side + 'Y'] + (g.upper + g.lower) * 0.55
+  ];
+}
+// Pose one walker leg from the live pose: solve the IK,
+// place the foot and pole handles, draw the pole line.
+function poseWalkerLeg(side, J, p, g) {
+  const zSide = side === 'L' ? g.zL : g.zR;
+  const step = (side === 'L' ? 1 : -1) * p.legStep * 0.02;
+  const fx = p['foot' + side + 'X'] + step;
+  const fy = p['foot' + side + 'Y'];
+  const hipY = legClear + p.moveY;
+  const anch = poleAnchor(side, p, g);
+  const poleWorld = [
+    anch[0] + p['pole' + side + 'X'],
+    anch[1] + p['pole' + side + 'Y'],
+    zSide
+  ];
+  const poleVec = [
+    poleWorld[0] - p.moveX,
+    poleWorld[1] - hipY,
+    poleWorld[2] - (p.moveZ + zSide)
+  ];
+  const res = poseLegIK(J,
+    fx - p.moveX, (g.ankleH + fy) - hipY, -p.moveZ,
+    g.upper, g.lower,
+    rad(p['ankle' + side]), rad(p['footRoll' + side]), rad(p['footYaw' + side]),
+    poleVec, g, 'bend' + side);
+  g['shin' + side] = res.shin;
+  J.toe.rotation.z = rad(p['toe' + side]);
+  const fh = ikHandles['foot' + side];
+  if (fh) {
+    fh.position.set(fx, g.ankleH + fy, zSide);
+    fh.rotation.set(rad(p['footRoll' + side]), rad(p['footYaw' + side]), rad(p['ankle' + side]));
+  }
+  const ph = poleHandles['pole' + side];
+  if (ph) ph.position.set(poleWorld[0], poleWorld[1], poleWorld[2]);
+  const line = poleLines[side];
+  if (line) {
+    line.geometry.setFromPoints([
+      new THREE.Vector3(poleWorld[0], poleWorld[1], poleWorld[2]),
+      new THREE.Vector3(
+        p.moveX + res.kneeOff[0],
+        hipY + res.kneeOff[1],
+        p.moveZ + zSide + res.kneeOff[2])
+    ]);
+  }
 }
 let ballRadius = 0.9, legClear = 0;
 
@@ -667,7 +757,7 @@ function buildRig() {
   ballMesh.add(tick);
   charGroup.add(ballMesh);
 
-  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null; walkerGeom = null; ikHandles = {}; walkerLegRoot = null;
+  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null; walkerGeom = null; ikHandles = {}; walkerLegRoot = null; poleHandles = {}; poleLines = {};
   tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
   tailCtrlMeshes = [];
   // Controller ring on the ball's equator, where the red
@@ -774,6 +864,7 @@ function buildRig() {
       hip.add(knee);
       const ankle = new THREE.Group();
       ankle.name = 'Ankle' + side;
+      ankle.rotation.order = 'YXZ';   // yaw, then roll, then pitch
       ankle.position.y = -lower;
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.30, ankleH, 0.19), legMat);
       foot.position.set(0.05, -ankleH / 2, 0);
@@ -794,7 +885,7 @@ function buildRig() {
     const wl = mkLeg('L', ballRadius * 0.42);
     const wr = mkLeg('R', -ballRadius * 0.42);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, shinL: 0, shinR: 0 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, shinL: 0, shinR: 0, bendL: 1, bendR: 1 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
@@ -826,6 +917,7 @@ function buildRig() {
         new THREE.MeshBasicMaterial({ color })
       );
       h.name = 'FootHandle' + side;
+      h.rotation.order = 'YXZ';   // the tilt reads back as yaw / roll / pitch
       h.position.set(0, ankleH, z);   // the rest ankle spot, in the world
       Object.assign(h.userData, { ctrl: 'foot' + side, tool: 'move', label: 'foot' + side });
       ikGroup.add(h);
@@ -839,6 +931,35 @@ function buildRig() {
     ikHandles = {
       footL: mkHandle('L', ballRadius * 0.42, 0xffa94d),
       footR: mkHandle('R', -ballRadius * 0.42, 0x4dabf7)
+    };
+    // Pole handles: a small ball in front of each knee.
+    // Drag one and the knee bends toward it. A thin line
+    // joins the handle to the knee.
+    const mkPole = (side, z, color) => {
+      const h = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      h.name = 'PoleHandle' + side;
+      h.position.set(0.8, ankleH + (upper + lower) * 0.55, z);
+      Object.assign(h.userData, { ctrl: 'pole' + side, tool: 'move', label: 'pole' + side });
+      ikGroup.add(h);
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.26), hitMat);
+      Object.assign(hit.userData, { ctrl: 'pole' + side, tool: 'move', label: 'pole' + side });
+      h.add(hit);
+      tailCtrlMeshes.push(h);
+      tailCtrlMeshes.push(hit);
+      const lg = new THREE.BufferGeometry().setFromPoints(
+        [new THREE.Vector3(), new THREE.Vector3()]);
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color }));
+      line.name = 'PoleLine' + side;
+      ikGroup.add(line);
+      poleLines[side] = line;
+      return h;
+    };
+    poleHandles = {
+      poleL: mkPole('L', ballRadius * 0.42, 0x22b8cf),
+      poleR: mkPole('R', -ballRadius * 0.42, 0xbe4bdb)
     };
   }
 
@@ -1006,27 +1127,13 @@ function applyPose() {
   }
   if (template === 4 && walkerJoints && walkerGeom) {
     // Walker legs are IK, and the foot targets live in
-    // the WORLD: the feet stay planted when the body
-    // translates. The leg root counter-turns against the
-    // ball control, so ball rotation never moves the legs.
-    const g = walkerGeom;
+    // the WORLD: the feet stay planted in X, Y, and Z
+    // when the body translates (the hip splays for Z).
+    // The leg root counter-turns against the ball
+    // control, so ball rotation never moves the legs.
     if (walkerLegRoot) walkerLegRoot.quaternion.copy(charGroup.quaternion).invert();
-    const stepX = p.legStep * 0.02;
-    const hipY = legClear + p.moveY;   // hip height in the world
-    const txL = (p.footLX + stepX) - p.moveX, tyL = (g.ankleH + p.footLY) - hipY;
-    const txR = (p.footRX - stepX) - p.moveX, tyR = (g.ankleH + p.footRY) - hipY;
-    g.shinL = poseLegIK(walkerJoints.L, txL, tyL, g.upper, g.lower, rad(p.ankleL));
-    g.shinR = poseLegIK(walkerJoints.R, txR, tyR, g.upper, g.lower, rad(p.ankleR));
-    walkerJoints.L.toe.rotation.z = rad(p.toeL);
-    walkerJoints.R.toe.rotation.z = rad(p.toeR);
-    if (ikHandles.footL) {
-      ikHandles.footL.position.set(p.footLX + stepX, g.ankleH + p.footLY, g.zL);
-      ikHandles.footL.rotation.set(0, 0, rad(p.ankleL));
-    }
-    if (ikHandles.footR) {
-      ikHandles.footR.position.set(p.footRX - stepX, g.ankleH + p.footRY, g.zR);
-      ikHandles.footR.rotation.set(0, 0, rad(p.ankleR));
-    }
+    poseWalkerLeg('L', walkerJoints.L, p, walkerGeom);
+    poseWalkerLeg('R', walkerJoints.R, p, walkerGeom);
   }
   updateGhosts();
   updateSettings();
@@ -1082,6 +1189,24 @@ function updateSettings() {
   $('setFrame').textContent = String(currentFrame);
 }
 
+// The Settings box shows only the picked controller's own
+// values: the ball, one joint, or one leg.
+function updateSettingsGroups() {
+  const c = selectedCtrl;
+  let show = 'setGroupBall', title = 'Ball control';
+  if (c === 'tail1') { show = 'setJoint1'; title = chanLabel('tail1'); }
+  else if (c === 'tail2') { show = 'setJoint2'; title = chanLabel('tail2'); }
+  else if (c === 'tail3') { show = 'setJoint3'; title = chanLabel('tail3'); }
+  else if (c === 'footL' || c === 'poleL' || c === 'ankleL' || c === 'toeL') { show = 'setGroupLegL'; title = 'Leg L'; }
+  else if (c === 'footR' || c === 'poleR' || c === 'ankleR' || c === 'toeR') { show = 'setGroupLegR'; title = 'Leg R'; }
+  for (const id of ['setGroupBall', 'setJoint1', 'setJoint2', 'setJoint3', 'setGroupLegL', 'setGroupLegR']) {
+    const el = $(id);
+    if (el) el.style.display = id === show ? '' : 'none';
+  }
+  const t = $('settingsTitle');
+  if (t) t.textContent = title;
+}
+
 // ---------- Frame control ----------
 function setFrame(f) {
   currentFrame = clamp(Math.round(f), FIRST_FRAME, LAST_FRAME);
@@ -1101,15 +1226,33 @@ tc.addEventListener('dragging-changed', (e) => {
 // Dragging with a tool writes back into the live pose (not yet keyed).
 tc.addEventListener('objectChange', () => {
   if (!charGroup) return;
+  if (poleHandles[selectedCtrl]) {
+    // A pole handle is picked: its offset from its home
+    // spot is the pose. The knee bends toward it.
+    const h = poleHandles[selectedCtrl];
+    const side = selectedCtrl === 'poleL' ? 'L' : 'R';
+    if (h && walkerGeom) {
+      const anch = poleAnchor(side, livePose, walkerGeom);
+      livePose['pole' + side + 'X'] = Math.round((h.position.x - anch[0]) * 100) / 100;
+      livePose['pole' + side + 'Y'] = Math.round((h.position.y - anch[1]) * 100) / 100;
+    }
+    applyPose();
+    if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
+    return;
+  }
   if (ikHandles[selectedCtrl]) {
     // An IK foot handle is picked. It lives in the world:
-    // Move places the foot; Rotate tilts it (the ankle).
+    // Move places the foot. Rotate turns it: Z pitches
+    // (the ankle), X rolls, Y yaws.
     const h = ikHandles[selectedCtrl];
     const side = selectedCtrl === 'footL' ? 'L' : 'R';
     if (h && walkerGeom) {
       if (tc.mode === 'rotate') {
-        livePose['ankle' + side] =
-          Math.round(clamp(h.rotation.z * 180 / Math.PI, -170, 170) * 100) / 100;
+        const r2d = 180 / Math.PI;
+        const rd = (v) => Math.round(clamp(v * r2d, -170, 170) * 100) / 100;
+        livePose['ankle' + side] = rd(h.rotation.z);
+        livePose['footRoll' + side] = rd(h.rotation.x);
+        livePose['footYaw' + side] = rd(h.rotation.y);
       } else {
         livePose['foot' + side + 'X'] = Math.round(h.position.x * 100) / 100;
         livePose['foot' + side + 'Y'] = Math.round((h.position.y - walkerGeom.ankleH) * 100) / 100;
@@ -1163,6 +1306,7 @@ tc.addEventListener('objectChange', () => {
 // ---------- Tools ----------
 function selectedObject() {
   if (ikHandles[selectedCtrl]) return ikHandles[selectedCtrl];
+  if (poleHandles[selectedCtrl]) return poleHandles[selectedCtrl];
   return selectedCtrl === 'ball' ? charGroup : tailCtrlJoints[selectedCtrl];
 }
 function setTool(tool) {
@@ -1177,7 +1321,7 @@ function setTool(tool) {
 
 // Pick the ball or a tail controller by clicking in the 3D view.
 function selectControl(name) {
-  if (name !== 'ball' && !tailCtrlJoints[name] && !ikHandles[name]) return;
+  if (name !== 'ball' && !tailCtrlJoints[name] && !ikHandles[name] && !poleHandles[name]) return;
   selectedCtrl = name;
   if (name === 'ball') {
     say('Ball picked.');
@@ -1189,6 +1333,7 @@ function selectControl(name) {
     const obj = selectedObject();
     if (obj) tc.attach(obj);
   }
+  updateSettingsGroups();
 }
 const raycaster = new THREE.Raycaster();
 renderer.domElement.addEventListener('pointerdown', (e) => {
@@ -1208,8 +1353,10 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     if (u.label === 'disc') say('Disc picked. Drag the Move arrows (W) to move the whole rig.');
     if (u.label === 'pivot') say('Top arm picked. Drag the round Rotate arrows (E) to swing the arm.');
     if (u.label === 'ballring') say('Ball picked. Drag the round Rotate arrows (E) to turn the ball.');
-    if (u.label === 'footL') say('Foot L picked. Move (W) places the foot. Rotate (E) tilts it.');
-    if (u.label === 'footR') say('Foot R picked. Move (W) places the foot. Rotate (E) tilts it.');
+    if (u.label === 'footL') say('Foot L picked. Move (W) places the foot. Rotate (E) turns and tilts it.');
+    if (u.label === 'footR') say('Foot R picked. Move (W) places the foot. Rotate (E) turns and tilts it.');
+    if (u.label === 'poleL') say('Pole L picked. Drag it (W) to steer the left knee.');
+    if (u.label === 'poleR') say('Pole R picked. Drag it (W) to steer the right knee.');
     return;
   }
   const rigHits = raycaster.intersectObject(charGroup, true);
@@ -1688,6 +1835,7 @@ function setTemplate(t) {
   $('lblTail2').textContent = chanLabel('tail2');
   $('lblTail3').textContent = chanLabel('tail3');
   buildRig();
+  updateSettingsGroups();
 }
 document.querySelectorAll('.tpl-btn').forEach((b) =>
   b.addEventListener('click', () => {
@@ -1844,7 +1992,7 @@ function buildGeChannelList() {
   const groups = [
     ['BALL CONTROL', TRANSFORM_CHANNELS],
     ['EXTRA', ['tail1', 'tail2', 'tail3', 'legStep']],
-    ['WALKER', ['footLX', 'footLY', 'ankleL', 'toeL', 'footRX', 'footRY', 'ankleR', 'toeR']]
+    ['WALKER', ['footLX', 'footLY', 'ankleL', 'toeL', 'footYawL', 'footRollL', 'poleLX', 'poleLY', 'footRX', 'footRY', 'ankleR', 'toeR', 'footYawR', 'footRollR', 'poleRX', 'poleRY']]
   ];
   for (const [gname, names] of groups) {
     const h = document.createElement('div');

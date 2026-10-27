@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=43">
+<link rel="stylesheet" href="style.css?v=44">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -104,44 +104,76 @@
       </div>
 
       <div class="panel" id="settingsPanel">
-        <div class="panel-title">SETTINGS &mdash; Ball control</div>
-        <div class="set-label">Move&ensp;X / Y / Z &mdash; click a box and type</div>
-        <div class="set-inputs">
-          <input type="number" step="0.1" class="chan-input" data-chan="moveX" title="Move X">
-          <input type="number" step="0.1" class="chan-input" data-chan="moveY" title="Move Y">
-          <input type="number" step="0.1" class="chan-input" data-chan="moveZ" title="Move Z">
+        <div class="panel-title">SETTINGS &mdash; <span id="settingsTitle">Ball control</span></div>
+        <div id="setGroupBall">
+          <div class="set-label">Move&ensp;X / Y / Z &mdash; click a box and type</div>
+          <div class="set-inputs">
+            <input type="number" step="0.1" class="chan-input" data-chan="moveX" title="Move X">
+            <input type="number" step="0.1" class="chan-input" data-chan="moveY" title="Move Y">
+            <input type="number" step="0.1" class="chan-input" data-chan="moveZ" title="Move Z">
+          </div>
+          <div class="set-label">Rotate&ensp;X / Y / Z &mdash; degrees</div>
+          <div class="set-inputs">
+            <input type="number" step="1" class="chan-input" data-chan="rotateX" title="Rotate X">
+            <input type="number" step="1" class="chan-input" data-chan="rotateY" title="Rotate Y">
+            <input type="number" step="1" class="chan-input" data-chan="rotateZ" title="Rotate Z">
+          </div>
+          <div class="set-label">Scale&ensp;X / Y / Z</div>
+          <div class="set-inputs">
+            <input type="number" step="0.05" class="chan-input" data-chan="scaleX" title="Scale X">
+            <input type="number" step="0.05" class="chan-input" data-chan="scaleY" title="Scale Y">
+            <input type="number" step="0.05" class="chan-input" data-chan="scaleZ" title="Scale Z">
+          </div>
         </div>
-        <div class="set-label">Rotate&ensp;X / Y / Z &mdash; degrees</div>
-        <div class="set-inputs">
-          <input type="number" step="1" class="chan-input" data-chan="rotateX" title="Rotate X">
-          <input type="number" step="1" class="chan-input" data-chan="rotateY" title="Rotate Y">
-          <input type="number" step="1" class="chan-input" data-chan="rotateZ" title="Rotate Z">
+        <div id="setJoint1">
+          <div class="set-label"><span id="lblTail1">Tail 1</span> &mdash; bend, degrees</div>
+          <div class="set-inputs">
+            <input type="number" step="1" class="chan-input" data-chan="tail1" title="Controller 1 bend">
+          </div>
         </div>
-        <div class="set-label">Scale&ensp;X / Y / Z</div>
-        <div class="set-inputs">
-          <input type="number" step="0.05" class="chan-input" data-chan="scaleX" title="Scale X">
-          <input type="number" step="0.05" class="chan-input" data-chan="scaleY" title="Scale Y">
-          <input type="number" step="0.05" class="chan-input" data-chan="scaleZ" title="Scale Z">
+        <div id="setJoint2">
+          <div class="set-label"><span id="lblTail2">Tail 2</span> &mdash; bend, degrees</div>
+          <div class="set-inputs">
+            <input type="number" step="1" class="chan-input" data-chan="tail2" title="Controller 2 bend">
+          </div>
         </div>
-        <div class="set-label"><span id="lblTail1">Tail 1</span> &middot; <span id="lblTail2">Tail 2</span> &middot; <span id="lblTail3">Tail 3</span> &mdash; bend, degrees</div>
-        <div class="set-inputs">
-          <input type="number" step="1" class="chan-input" data-chan="tail1" title="Controller 1 bend">
-          <input type="number" step="1" class="chan-input" data-chan="tail2" title="Controller 2 bend">
-          <input type="number" step="1" class="chan-input" data-chan="tail3" title="Controller 3 bend">
+        <div id="setJoint3">
+          <div class="set-label"><span id="lblTail3">Tail 3</span> &mdash; bend, degrees</div>
+          <div class="set-inputs">
+            <input type="number" step="1" class="chan-input" data-chan="tail3" title="Controller 3 bend">
+          </div>
         </div>
-        <div class="set-label">Leg L &mdash; Foot X / Foot Y / Ankle / Toe</div>
-        <div class="set-inputs">
-          <input type="number" step="0.05" class="chan-input" data-chan="footLX" title="Foot L X">
-          <input type="number" step="0.05" class="chan-input" data-chan="footLY" title="Foot L Y">
-          <input type="number" step="1" class="chan-input" data-chan="ankleL" title="Ankle L">
-          <input type="number" step="1" class="chan-input" data-chan="toeL" title="Toe L">
+        <div id="setGroupLegL">
+          <div class="set-label">Leg L &mdash; Foot X / Y &middot; Ankle &middot; Toe &middot; Yaw &middot; Roll</div>
+          <div class="set-inputs">
+            <input type="number" step="0.05" class="chan-input" data-chan="footLX" title="Foot L X">
+            <input type="number" step="0.05" class="chan-input" data-chan="footLY" title="Foot L Y">
+            <input type="number" step="1" class="chan-input" data-chan="ankleL" title="Ankle L">
+            <input type="number" step="1" class="chan-input" data-chan="toeL" title="Toe L">
+            <input type="number" step="1" class="chan-input" data-chan="footYawL" title="Foot L Yaw">
+            <input type="number" step="1" class="chan-input" data-chan="footRollL" title="Foot L Roll">
+          </div>
+          <div class="set-label">Leg L &mdash; Pole X / Y &mdash; steers the knee</div>
+          <div class="set-inputs">
+            <input type="number" step="0.05" class="chan-input" data-chan="poleLX" title="Pole L X">
+            <input type="number" step="0.05" class="chan-input" data-chan="poleLY" title="Pole L Y">
+          </div>
         </div>
-        <div class="set-label">Leg R &mdash; Foot X / Foot Y / Ankle / Toe</div>
-        <div class="set-inputs">
-          <input type="number" step="0.05" class="chan-input" data-chan="footRX" title="Foot R X">
-          <input type="number" step="0.05" class="chan-input" data-chan="footRY" title="Foot R Y">
-          <input type="number" step="1" class="chan-input" data-chan="ankleR" title="Ankle R">
-          <input type="number" step="1" class="chan-input" data-chan="toeR" title="Toe R">
+        <div id="setGroupLegR">
+          <div class="set-label">Leg R &mdash; Foot X / Y &middot; Ankle &middot; Toe &middot; Yaw &middot; Roll</div>
+          <div class="set-inputs">
+            <input type="number" step="0.05" class="chan-input" data-chan="footRX" title="Foot R X">
+            <input type="number" step="0.05" class="chan-input" data-chan="footRY" title="Foot R Y">
+            <input type="number" step="1" class="chan-input" data-chan="ankleR" title="Ankle R">
+            <input type="number" step="1" class="chan-input" data-chan="toeR" title="Toe R">
+            <input type="number" step="1" class="chan-input" data-chan="footYawR" title="Foot R Yaw">
+            <input type="number" step="1" class="chan-input" data-chan="footRollR" title="Foot R Roll">
+          </div>
+          <div class="set-label">Leg R &mdash; Pole X / Y &mdash; steers the knee</div>
+          <div class="set-inputs">
+            <input type="number" step="0.05" class="chan-input" data-chan="poleRX" title="Pole R X">
+            <input type="number" step="0.05" class="chan-input" data-chan="poleRY" title="Pole R Y">
+          </div>
         </div>
         <div class="set-label">Frame</div>
         <div class="set-value" id="setFrame">1</div>
@@ -260,6 +292,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=43"></script>
+<script type="module" src="app.js?v=44"></script>
 </body>
 </html>
