@@ -746,13 +746,15 @@ function buildRig() {
     charGroup.add(mount);
     // Top arm controller: a blue ring around the arm at
     // the pivot. Click it to pick the swing and rotate.
+    // The ring is wide: at the pivot it must clear the
+    // tool gizmo arrows that sit on the same point.
     const pivotRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.32, 0.04, 10, 28),
+      new THREE.TorusGeometry(0.55, 0.045, 10, 32),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(CHAN_COLOR.rotateZ) })
     );
     pivotRing.rotation.x = Math.PI / 2;
     charGroup.add(pivotRing);
-    addHitRing(charGroup, 0.32, 0.17, 'x', { ctrl: 'ball', tool: 'rotate', label: 'pivot' });
+    addHitRing(charGroup, 0.55, 0.2, 'x', { ctrl: 'ball', tool: 'rotate', label: 'pivot' });
     const mkSeg = (len, r) => {
       const seg = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), sketchMat);
       seg.position.y = -len / 2;
