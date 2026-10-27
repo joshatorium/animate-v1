@@ -736,6 +736,7 @@ function buildRig() {
       addOutline(toeMesh, 1.04);
       toe.add(toeMesh);
       ankle.add(toe);
+      knee.add(ankle);
       charGroup.add(hip);
       return { hip, knee, ankle, toe };
     };
