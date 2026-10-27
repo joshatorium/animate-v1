@@ -872,6 +872,12 @@ function buildRig() {
       const hip = new THREE.Group();
       hip.name = 'Hip' + side;
       hip.position.set(stag, -ballRadius, z);   // hip at the bottom of the ball, staggered like its foot
+      // A ball at the hip joint: it sits in the body and
+      // covers the joint, so no gap shows when the leg swings.
+      const hipBall = new THREE.Mesh(unitSphere, legMat);
+      hipBall.scale.setScalar(0.17);
+      addOutline(hipBall, 1.05);
+      hip.add(hipBall);
       const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.085, upper, 10), legMat);
       thigh.position.y = -upper / 2;
       hip.add(thigh);
@@ -906,10 +912,10 @@ function buildRig() {
       legRoot.add(hip);
       return { hip, knee, ankle, toe };
     };
-    const wl = mkLeg('L', ballRadius * 0.62, -0.22);
-    const wr = mkLeg('R', -ballRadius * 0.62, 0.22);
+    const wl = mkLeg('L', ballRadius * 0.42, 0);
+    const wr = mkLeg('R', -ballRadius * 0.42, 0);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.62, zR: -ballRadius * 0.62, stagL: -0.22, stagR: 0.22 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, stagL: 0, stagR: 0 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
@@ -953,8 +959,8 @@ function buildRig() {
       return h;
     };
     ikHandles = {
-      footL: mkHandle('L', ballRadius * 0.62, 0xffa94d),
-      footR: mkHandle('R', -ballRadius * 0.62, 0x4dabf7)
+      footL: mkHandle('L', ballRadius * 0.42, 0xffa94d),
+      footR: mkHandle('R', -ballRadius * 0.42, 0x4dabf7)
     };
     // Pole handles: a small ball in front of each knee.
     // Drag one and the knee bends toward it. A thin line
@@ -982,8 +988,8 @@ function buildRig() {
       return h;
     };
     poleHandles = {
-      poleL: mkPole('L', ballRadius * 0.62, 0x22b8cf),
-      poleR: mkPole('R', -ballRadius * 0.62, 0xbe4bdb)
+      poleL: mkPole('L', ballRadius * 0.42, 0x22b8cf),
+      poleR: mkPole('R', -ballRadius * 0.42, 0xbe4bdb)
     };
     // The Walker can wear the long tail: the same chain
     // as the tail rig, half again as long, out the back,
