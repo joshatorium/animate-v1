@@ -60,7 +60,9 @@ const DEFAULTS = {
   moveX: 0, moveY: 0, moveZ: 0,
   rotateX: 0, rotateY: 0, rotateZ: 0,
   scaleX: 1, scaleY: 1, scaleZ: 1,
-  tail1: 0, tail2: 0, tail3: 0, legStep: 0
+  tail1: 0, tail2: 0, tail3: 0, legStep: 0,
+  hipL: 0, kneeL: 0, ankleL: 0, toeL: 0,
+  hipR: 0, kneeR: 0, ankleR: 0, toeR: 0
 };
 const CHAN_LABEL = {
   moveX: 'Move X', moveY: 'Move Y', moveZ: 'Move Z',
