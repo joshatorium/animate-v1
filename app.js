@@ -1102,6 +1102,7 @@ function buildRig() {
   selectedCtrl = 'ball';
   tc.attach(charGroup);
   applyPose();
+  updateSettingsGroups();
 }
 
 // Pose the character from the live pose values.
