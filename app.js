@@ -1915,6 +1915,35 @@ $('chkWalkerTail').addEventListener('change', (e) => {
   say(walkerTailOn ? 'Walker tail on.' : 'Walker tail off.');
 });
 
+// Debug readout: open the app with ?debuglegs in the
+// address and a small panel lists the live world spots
+// of the leg parts, straight from the scene. Inert
+// without the flag.
+if (new URLSearchParams(location.search).has('debuglegs')) {
+  const pre = document.createElement('pre');
+  pre.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;background:#fff;color:#000;padding:8px;font-size:12px;border:2px solid #000;white-space:pre;';
+  document.body.appendChild(pre);
+  const findObj = (name) => {
+    let f = null;
+    if (scene) scene.traverse((o) => { if (o.name === name) f = o; });
+    return f;
+  };
+  const spots = () => {
+    const lines = [];
+    for (const n of ['HipL', 'HipR', 'KneeL', 'KneeR', 'AnkleL', 'AnkleR', 'FootHandleL', 'FootHandleR', 'PoleHandleL', 'PoleHandleR']) {
+      const o = findObj(n);
+      if (!o) { lines.push(n + ': MISSING'); continue; }
+      const p = new THREE.Vector3();
+      o.getWorldPosition(p);
+      lines.push(n + ': (' + p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ', ' + p.z.toFixed(2) + ')');
+    }
+    lines.push('template=' + template + ' ballRadius=' + ballRadius.toFixed(3) + ' legKids=' +
+      (walkerLegRoot ? walkerLegRoot.children.length : -1));
+    pre.textContent = lines.join('\n');
+  };
+  setInterval(spots, 700);
+}
+
 // ---------- Save / Open project JSON ----------
 function projectData() {
   return {
