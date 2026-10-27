@@ -906,10 +906,10 @@ function buildRig() {
       legRoot.add(hip);
       return { hip, knee, ankle, toe };
     };
-    const wl = mkLeg('L', ballRadius * 0.62, 0.22);
-    const wr = mkLeg('R', -ballRadius * 0.62, -0.22);
+    const wl = mkLeg('L', ballRadius * 0.62, -0.22);
+    const wr = mkLeg('R', -ballRadius * 0.62, 0.22);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.62, zR: -ballRadius * 0.62, stagL: 0.22, stagR: -0.22 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.62, zR: -ballRadius * 0.62, stagL: -0.22, stagR: 0.22 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
