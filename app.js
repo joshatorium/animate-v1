@@ -462,6 +462,9 @@ let pendJoints = [];  // the pendulum arm joints (template 2)
 let walkerJoints = null; // {L, R} leg joint groups (template 4)
 let walkerGeom = null;   // leg sizes and solved shin angles (template 4)
 let ikHandles = {};      // foot target handles: footL, footR (template 4)
+let ikGroup = null;      // scene group holding the IK handles (world space)
+let walkerLegRoot = null; // leg root: counter-turned so body rotation skips the legs
+const _ikT = new THREE.Vector3();
 let pendMount = null; // the disc mount: follows the pivot point but never rotates
 const _gPivot = new THREE.Vector3();
 const _gOff = new THREE.Vector3();
@@ -641,6 +644,7 @@ function disposeGroup(g) {
 function buildRig() {
   if (charGroup) { scene.remove(charGroup); disposeGroup(charGroup); }
   if (pendMount) { scene.remove(pendMount); disposeGroup(pendMount); pendMount = null; }
+  if (ikGroup) { scene.remove(ikGroup); disposeGroup(ikGroup); ikGroup = null; }
   for (const g of ghostPool) { scene.remove(g.mesh); g.mesh.material.dispose(); }
   ghostPool = [];
   charGroup = new THREE.Group();
@@ -663,7 +667,7 @@ function buildRig() {
   ballMesh.add(tick);
   charGroup.add(ballMesh);
 
-  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null; walkerGeom = null; ikHandles = {};
+  tailJoints = []; tailRoot = null; legL = null; legR = null; walkerJoints = null; walkerGeom = null; ikHandles = {}; walkerLegRoot = null;
   tailCtrlJoints = { tail1: null, tail2: null, tail3: null };
   tailCtrlMeshes = [];
   // Controller ring on the ball's equator, where the red
@@ -743,6 +747,13 @@ function buildRig() {
     const ankleH = 0.10;                        // ankle height off the ground
     const upper = (legLen - ankleH) * 0.52;
     const lower = (legLen - ankleH) * 0.48;
+    // The legs hang from their own root. Each pose, the
+    // root counter-turns against the ball control, so
+    // rotating the ball never moves the legs.
+    const legRoot = new THREE.Group();
+    legRoot.name = 'LegRoot';
+    charGroup.add(legRoot);
+    walkerLegRoot = legRoot;
     const mkLeg = (side, z) => {
       const hip = new THREE.Group();
       hip.name = 'Hip' + side;
@@ -777,13 +788,13 @@ function buildRig() {
       toe.add(toeMesh);
       ankle.add(toe);
       knee.add(ankle);
-      charGroup.add(hip);
+      legRoot.add(hip);
       return { hip, knee, ankle, toe };
     };
     const wl = mkLeg('L', ballRadius * 0.42);
     const wr = mkLeg('R', -ballRadius * 0.42);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, shinL: 0, shinR: 0 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.42, zR: -ballRadius * 0.42, shinL: 0, shinR: 0 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
@@ -802,17 +813,22 @@ function buildRig() {
       tailCtrlMeshes.push(ring);
       addHitRing(j, 0.17, 0.13, 'x', { ctrl: name });
     }
-    // IK foot handles: a diamond at each foot. Drag it
-    // with the Move tool and the leg solves to reach it.
+    // IK foot handles: a diamond at each foot. They live
+    // in WORLD space, not on the body: drag one with the
+    // Move tool to place the foot, and the foot stays
+    // planted when the body moves. Rotate tilts the foot.
+    ikGroup = new THREE.Group();
+    ikGroup.name = 'IkHandles';
+    scene.add(ikGroup);
     const mkHandle = (side, z, color) => {
       const h = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.13),
         new THREE.MeshBasicMaterial({ color })
       );
       h.name = 'FootHandle' + side;
-      h.position.set(0, -ballRadius - (upper + lower), z);
+      h.position.set(0, ankleH, z);   // the rest ankle spot, in the world
       Object.assign(h.userData, { ctrl: 'foot' + side, tool: 'move', label: 'foot' + side });
-      charGroup.add(h);
+      ikGroup.add(h);
       const hit = new THREE.Mesh(new THREE.SphereGeometry(0.30), hitMat);
       Object.assign(hit.userData, { ctrl: 'foot' + side, tool: 'move', label: 'foot' + side });
       h.add(hit);
@@ -989,19 +1005,28 @@ function applyPose() {
     pendJoints[2].rotation.z = rad(p.tail3);
   }
   if (template === 4 && walkerJoints && walkerGeom) {
-    // Walker legs are IK: the foot channels place the
-    // feet, and each leg solves its hip and knee to reach.
-    // Leg Step still splits the feet, like the old stride.
+    // Walker legs are IK, and the foot targets live in
+    // the WORLD: the feet stay planted when the body
+    // translates. The leg root counter-turns against the
+    // ball control, so ball rotation never moves the legs.
     const g = walkerGeom;
+    if (walkerLegRoot) walkerLegRoot.quaternion.copy(charGroup.quaternion).invert();
     const stepX = p.legStep * 0.02;
-    const txL = p.footLX + stepX, tyL = -(g.upper + g.lower) + p.footLY;
-    const txR = p.footRX - stepX, tyR = -(g.upper + g.lower) + p.footRY;
+    const hipY = legClear + p.moveY;   // hip height in the world
+    const txL = (p.footLX + stepX) - p.moveX, tyL = (g.ankleH + p.footLY) - hipY;
+    const txR = (p.footRX - stepX) - p.moveX, tyR = (g.ankleH + p.footRY) - hipY;
     g.shinL = poseLegIK(walkerJoints.L, txL, tyL, g.upper, g.lower, rad(p.ankleL));
     g.shinR = poseLegIK(walkerJoints.R, txR, tyR, g.upper, g.lower, rad(p.ankleR));
     walkerJoints.L.toe.rotation.z = rad(p.toeL);
     walkerJoints.R.toe.rotation.z = rad(p.toeR);
-    if (ikHandles.footL) ikHandles.footL.position.set(txL, -ballRadius + tyL, g.zL);
-    if (ikHandles.footR) ikHandles.footR.position.set(txR, -ballRadius + tyR, g.zR);
+    if (ikHandles.footL) {
+      ikHandles.footL.position.set(p.footLX + stepX, g.ankleH + p.footLY, g.zL);
+      ikHandles.footL.rotation.set(0, 0, rad(p.ankleL));
+    }
+    if (ikHandles.footR) {
+      ikHandles.footR.position.set(p.footRX - stepX, g.ankleH + p.footRY, g.zR);
+      ikHandles.footR.rotation.set(0, 0, rad(p.ankleR));
+    }
   }
   updateGhosts();
   updateSettings();
@@ -1077,12 +1102,18 @@ tc.addEventListener('dragging-changed', (e) => {
 tc.addEventListener('objectChange', () => {
   if (!charGroup) return;
   if (ikHandles[selectedCtrl]) {
-    // An IK foot handle is picked: its place IS the pose.
+    // An IK foot handle is picked. It lives in the world:
+    // Move places the foot; Rotate tilts it (the ankle).
     const h = ikHandles[selectedCtrl];
     const side = selectedCtrl === 'footL' ? 'L' : 'R';
     if (h && walkerGeom) {
-      livePose['foot' + side + 'X'] = Math.round(h.position.x * 100) / 100;
-      livePose['foot' + side + 'Y'] = Math.round((h.position.y + ballRadius + walkerGeom.upper + walkerGeom.lower) * 100) / 100;
+      if (tc.mode === 'rotate') {
+        livePose['ankle' + side] =
+          Math.round(clamp(h.rotation.z * 180 / Math.PI, -170, 170) * 100) / 100;
+      } else {
+        livePose['foot' + side + 'X'] = Math.round(h.position.x * 100) / 100;
+        livePose['foot' + side + 'Y'] = Math.round((h.position.y - walkerGeom.ankleH) * 100) / 100;
+      }
     }
     applyPose();
     if (autoKeyOn) { writeKeys(); drawRuler(); if (graphOpen) drawGraph(); }
@@ -1177,8 +1208,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     if (u.label === 'disc') say('Disc picked. Drag the Move arrows (W) to move the whole rig.');
     if (u.label === 'pivot') say('Top arm picked. Drag the round Rotate arrows (E) to swing the arm.');
     if (u.label === 'ballring') say('Ball picked. Drag the round Rotate arrows (E) to turn the ball.');
-    if (u.label === 'footL') say('Foot L picked. Drag the Move arrows (W) to place the foot.');
-    if (u.label === 'footR') say('Foot R picked. Drag the Move arrows (W) to place the foot.');
+    if (u.label === 'footL') say('Foot L picked. Move (W) places the foot. Rotate (E) tilts it.');
+    if (u.label === 'footR') say('Foot R picked. Move (W) places the foot. Rotate (E) tilts it.');
     return;
   }
   const rigHits = raycaster.intersectObject(charGroup, true);
