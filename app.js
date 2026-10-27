@@ -584,7 +584,7 @@ function poseWalkerLeg(side, J, p, g) {
   const step = (side === 'L' ? 1 : -1) * p.legStep * 0.02;
   const fx = p['foot' + side + 'X'] + step + (g['stag' + side] || 0);
   const fy = p['foot' + side + 'Y'];
-  const fz = zSide + p['foot' + side + 'Z'];
+  const fz = zSide + (side === 'L' ? p.footLZ : p.footZR);   // the Z channels are named footLZ / footZR
   const hipPos = [p.moveX + (g['stag' + side] || 0), legClear + p.moveY, p.moveZ + zSide];
   const anch = poleAnchor(side, p, g);
   const poleWorld = [
@@ -1292,7 +1292,7 @@ tc.addEventListener('objectChange', () => {
         livePose['foot' + side + 'X'] =
           Math.round((h.position.x - step - (walkerGeom['stag' + side] || 0)) * 100) / 100;
         livePose['foot' + side + 'Y'] = Math.round((h.position.y - walkerGeom.ankleH) * 100) / 100;
-        livePose['foot' + side + 'Z'] = Math.round((h.position.z - zSide) * 100) / 100;
+        livePose[side === 'L' ? 'footLZ' : 'footZR'] = Math.round((h.position.z - zSide) * 100) / 100;
       }
     }
     applyPose();
