@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=37">
+<link rel="stylesheet" href="style.css?v=38">
 <!-- Three.js r160 from CDN. No build step, no npm. -->
 <script type="importmap">
 {
@@ -122,6 +122,12 @@
           <input type="number" step="0.05" class="chan-input" data-chan="scaleX" title="Scale X">
           <input type="number" step="0.05" class="chan-input" data-chan="scaleY" title="Scale Y">
           <input type="number" step="0.05" class="chan-input" data-chan="scaleZ" title="Scale Z">
+        </div>
+        <div class="set-label"><span id="lblTail1">Tail 1</span> &middot; <span id="lblTail2">Tail 2</span> &middot; <span id="lblTail3">Tail 3</span> &mdash; bend, degrees</div>
+        <div class="set-inputs">
+          <input type="number" step="1" class="chan-input" data-chan="tail1" title="Controller 1 bend">
+          <input type="number" step="1" class="chan-input" data-chan="tail2" title="Controller 2 bend">
+          <input type="number" step="1" class="chan-input" data-chan="tail3" title="Controller 3 bend">
         </div>
         <div class="set-label">Frame</div>
         <div class="set-value" id="setFrame">1</div>
@@ -240,6 +246,6 @@
 <input type="file" id="openFile" accept=".json,application/json" class="hidden">
 <input type="file" id="fbxFile" accept=".fbx" class="hidden">
 
-<script type="module" src="app.js?v=37"></script>
+<script type="module" src="app.js?v=38"></script>
 </body>
 </html>

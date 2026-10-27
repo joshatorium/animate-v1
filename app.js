@@ -1490,6 +1490,11 @@ function setTemplate(t) {
   document.querySelectorAll('.tpl-btn').forEach((b) =>
     b.classList.toggle('active', Number(b.dataset.tpl) === t));
   $('lessonSelect').value = String(t);
+  // The Settings controller boxes follow the rig's names:
+  // Tail 1/2/3 on the tail rig, Joint 1/2/3 on the pendulum.
+  $('lblTail1').textContent = chanLabel('tail1');
+  $('lblTail2').textContent = chanLabel('tail2');
+  $('lblTail3').textContent = chanLabel('tail3');
   buildRig();
 }
 document.querySelectorAll('.tpl-btn').forEach((b) =>
