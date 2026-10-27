@@ -585,7 +585,7 @@ function poseWalkerLeg(side, J, p, g) {
   const fx = p['foot' + side + 'X'] + step + (g['stag' + side] || 0);
   const fy = p['foot' + side + 'Y'];
   const fz = zSide + p['foot' + side + 'Z'];
-  const hipPos = [p.moveX, legClear + p.moveY, p.moveZ + zSide];
+  const hipPos = [p.moveX + (g['stag' + side] || 0), legClear + p.moveY, p.moveZ + zSide];
   const anch = poleAnchor(side, p, g);
   const poleWorld = [
     anch[0] + p['pole' + side + 'X'],
@@ -868,10 +868,10 @@ function buildRig() {
     legRoot.name = 'LegRoot';
     charGroup.add(legRoot);
     walkerLegRoot = legRoot;
-    const mkLeg = (side, z) => {
+    const mkLeg = (side, z, stag) => {
       const hip = new THREE.Group();
       hip.name = 'Hip' + side;
-      hip.position.set(0, -ballRadius, z);   // hip at the bottom of the ball
+      hip.position.set(stag, -ballRadius, z);   // hip at the bottom of the ball, staggered like its foot
       const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.085, upper, 10), legMat);
       thigh.position.y = -upper / 2;
       hip.add(thigh);
@@ -906,10 +906,10 @@ function buildRig() {
       legRoot.add(hip);
       return { hip, knee, ankle, toe };
     };
-    const wl = mkLeg('L', ballRadius * 0.55);
-    const wr = mkLeg('R', -ballRadius * 0.55);
+    const wl = mkLeg('L', ballRadius * 0.62, 0.22);
+    const wr = mkLeg('R', -ballRadius * 0.62, -0.22);
     walkerJoints = { L: wl, R: wr };
-    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.55, zR: -ballRadius * 0.55, stagL: 0.10, stagR: -0.10 };
+    walkerGeom = { upper, lower, ankleH, zL: ballRadius * 0.62, zR: -ballRadius * 0.62, stagL: 0.22, stagR: -0.22 };
     // Ring controllers on the ankle and toe: the hip and
     // knee are solved by IK, so they get no rings.
     const ringDefs = [
@@ -953,8 +953,8 @@ function buildRig() {
       return h;
     };
     ikHandles = {
-      footL: mkHandle('L', ballRadius * 0.55, 0xffa94d),
-      footR: mkHandle('R', -ballRadius * 0.55, 0x4dabf7)
+      footL: mkHandle('L', ballRadius * 0.62, 0xffa94d),
+      footR: mkHandle('R', -ballRadius * 0.62, 0x4dabf7)
     };
     // Pole handles: a small ball in front of each knee.
     // Drag one and the knee bends toward it. A thin line
@@ -982,8 +982,8 @@ function buildRig() {
       return h;
     };
     poleHandles = {
-      poleL: mkPole('L', ballRadius * 0.55, 0x22b8cf),
-      poleR: mkPole('R', -ballRadius * 0.55, 0xbe4bdb)
+      poleL: mkPole('L', ballRadius * 0.62, 0x22b8cf),
+      poleR: mkPole('R', -ballRadius * 0.62, 0xbe4bdb)
     };
     // The Walker can wear the long tail: the same chain
     // as the tail rig, half again as long, out the back,
